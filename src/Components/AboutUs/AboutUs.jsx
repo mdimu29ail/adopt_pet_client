@@ -50,7 +50,7 @@ const AboutUs = () => {
               {/* Main Image */}
               <div className="rounded-[4rem] rounded-br-none overflow-hidden border-[15px] border-white dark:border-gray-900 shadow-2xl relative z-10">
                 <img
-                  src="https://images.unsplash.com/photo-1516734212186-a967f81ad0d7?q=80&w=2071&auto=format&fit=crop"
+                  src="https://i.ibb.co.com/7tHP0pmf/14.jpg"
                   alt="Pet Love"
                   className="w-full h-[500px] object-cover"
                 />
@@ -63,7 +63,7 @@ const AboutUs = () => {
                 className="absolute -bottom-10 -left-6 md:-left-12 w-48 h-48 rounded-[3rem] overflow-hidden border-8 border-white dark:border-gray-900 shadow-2xl z-20 hidden md:block"
               >
                 <img
-                  src="https://images.unsplash.com/photo-1537151625747-7ae8a03a2156?q=80&w=1974&auto=format&fit=crop"
+                  src="https://i.ibb.co.com/rGQ1X7d9/Whats-App-Image-2025-07-14-at-20-27-35-c0c5cbfc.jpg"
                   alt="Puppy"
                   className="w-full h-full object-cover"
                 />

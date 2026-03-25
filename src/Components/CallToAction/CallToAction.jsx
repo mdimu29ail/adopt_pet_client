@@ -92,7 +92,7 @@ const CallToAction = () => {
                 initial={{ scale: 1.2 }}
                 whileInView={{ scale: 1 }}
                 transition={{ duration: 1.5 }}
-                src="https://images.unsplash.com/photo-1551730459-92db2a308d6a?q=80&w=1974&auto=format&fit=crop"
+                src="https://i.ibb.co.com/tMf5Yknh/Whats-App-Image-2025-07-14-at-20-27-58-5daff0b2.jpg"
                 alt="Happy Dog"
                 className="absolute inset-0 w-full h-full object-cover"
               />

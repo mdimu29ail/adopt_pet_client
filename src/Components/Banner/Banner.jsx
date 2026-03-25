@@ -8,24 +8,21 @@ import { FaPaw, FaHeart } from 'react-icons/fa';
 const Banner = () => {
   const slides = [
     {
-      image:
-        'https://i.ibb.co/NgysD7HD/Whats-App-Image-2025-07-14-at-22-03-47-3ef8f810.jpg',
+      image: 'https://i.ibb.co.com/kgPdQscm/Banner-2.jpg',
       title: 'Find Your New',
       highlight: 'Best Friend',
       description:
         'Thousands of lovable paws are waiting for a second chance. Start your journey of friendship today.',
     },
     {
-      image:
-        'https://i.ibb.co/hJsVSCFy/Whats-App-Image-2025-07-14-at-22-03-47-d83eb7ce.jpg',
+      image: 'https://i.ibb.co.com/7NCGxv4w/Banner-3.jpg',
       title: 'Give a Home to a',
       highlight: 'Soulmate',
       description:
         'Every pet deserves a family full of love and snacks. Adoption is an act of pure kindness.',
     },
     {
-      image:
-        'https://i.ibb.co/DHM90R2M/Whats-App-Image-2025-07-14-at-22-03-48-6a60bafb.jpg',
+      image: 'https://i.ibb.co.com/bgkcSJCd/10.jpg',
       title: 'Support Our',
       highlight: 'Furry Heroes',
       description:

@@ -196,7 +196,7 @@ const PetListing = () => {
 
                   <div className="mt-6 space-y-3">
                     <button
-                      onClick={() => navigate(`/pet-details/${pet.id}`)}
+                      onClick={() => navigate(`/dashboard/pets/${pet.id}`)}
                       className="w-full py-4 bg-[#37948b] text-white font-black rounded-2xl shadow-lg shadow-[#37948b33] flex items-center justify-center gap-2 hover:brightness-110 transition-all"
                     >
                       View Details <FaInfoCircle />

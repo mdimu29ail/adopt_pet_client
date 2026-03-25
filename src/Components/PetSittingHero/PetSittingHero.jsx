@@ -117,7 +117,7 @@ function PetSittingHero() {
               {/* Main Styled Image */}
               <div className="rounded-[4rem] rounded-bl-none overflow-hidden border-[15px] border-white dark:border-gray-800 shadow-2xl relative z-10">
                 <img
-                  src="https://i.ibb.co/hpPvVnQ/Whats-App-Image-2025-07-15-at-01-03-51-4c809265.jpg"
+                  src="https://i.ibb.co.com/fzJFdDGF/6.jpg"
                   alt="Pet Sitting Service"
                   className="w-full h-[400px] md:h-[550px] object-cover"
                 />
