@@ -1,56 +1,46 @@
 import React, { useState } from 'react';
-import { FaGithub } from 'react-icons/fa';
-
-import {
-  GithubAuthProvider,
-  fetchSignInMethodsForEmail,
-  signInWithPopup,
-} from 'firebase/auth';
+import { FaGithub, FaPaw } from 'react-icons/fa';
+import { motion } from 'framer-motion';
 import Swal from 'sweetalert2';
-import { useNavigate } from 'react-router';
-import { auth } from '../firebase/firebase.config';
+import { supabase } from '../Supabase/supabase.config';
 
 const GithubLogin = () => {
   const [loading, setLoading] = useState(false);
-  const githubProvider = new GithubAuthProvider();
-  const navigate = useNavigate();
 
   const handleGithubLogin = async () => {
     if (loading) return;
     setLoading(true);
 
     try {
-      const result = await signInWithPopup(auth, githubProvider);
+      // সুপাবেস দিয়ে গিটহাব লগইন লজিক
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'github',
+        options: {
+          redirectTo: window.location.origin, // লগইন শেষে এই সাইটেই ফিরবে
+        },
+      });
 
-      Swal.fire('Success', 'Logged in with GitHub!', 'success');
-      navigate('/'); // Redirect to home page or dashboard here
+      if (error) throw error;
+
+      // নোট: সুপাবেস অটোমেটিক রিডাইরেক্ট করে, তাই সাকসেস মেসেজ রিডাইরেক্টের পর আসবে
     } catch (error) {
-      if (error.code === 'auth/account-exists-with-different-credential') {
-        const email = error.customData.email;
-        const methods = await fetchSignInMethodsForEmail(auth, email);
+      console.error('Github Login Error:', error.message);
 
-        const providerNames = {
-          'google.com': 'Google',
-          password: 'Email/Password',
-          'facebook.com': 'Facebook',
-          'github.com': 'GitHub',
-        };
-
-        const readableProviders = methods
-          .map(m => providerNames[m] || m)
-          .join(', ');
-
+      // যদি একই ইমেইল দিয়ে অন্য একাউন্ট থাকে
+      if (error.message.includes('Account exists with different credential')) {
         Swal.fire({
           icon: 'info',
-          title: 'Account Exists',
-          html: `
-            An account already exists with the same email address but different sign-in credentials.<br/>
-            Please sign in using: <strong>${readableProviders}</strong>.<br/>
-            After that, you can link your GitHub login from your profile settings.
-          `,
+          title: 'Account Conflict',
+          text: 'An account with this email already exists. Please try logging in with Google or Email.',
+          confirmButtonColor: '#37948b',
         });
       } else {
-        Swal.fire('Error', error.message, 'error');
+        Swal.fire({
+          icon: 'error',
+          title: 'Login Error',
+          text: error.message,
+          confirmButtonColor: '#37948b',
+        });
       }
     } finally {
       setLoading(false);
@@ -58,14 +48,35 @@ const GithubLogin = () => {
   };
 
   return (
-    <button
+    <motion.button
+      whileHover={{
+        scale: 1.02,
+        backgroundColor: '#2d7a72',
+        boxShadow: '0px 10px 20px rgba(55, 148, 139, 0.2)',
+      }}
+      whileTap={{ scale: 0.98 }}
       onClick={handleGithubLogin}
       disabled={loading}
-      className="flex items-center justify-center w-full p-3 space-x-4 border rounded-full border-orange-500 hover:border-orange-800 hover:bg-orange-800  bg-orange-500 transition-colors "
+      className="flex items-center justify-center w-full p-4 space-x-4 border-2 border-[#37948b] rounded-2xl bg-[#37948b] text-white font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
     >
-      <FaGithub size="30px" />{' '}
-      <p>{loading ? 'Signing in...' : 'Sign in with GitHub'}</p>
-    </button>
+      {loading ? (
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+        >
+          <FaPaw className="text-2xl" />
+        </motion.div>
+      ) : (
+        <FaGithub
+          size="24px"
+          className="group-hover:rotate-12 transition-transform"
+        />
+      )}
+
+      <span className="tracking-wide">
+        {loading ? 'Connecting to GitHub...' : 'Continue with GitHub'}
+      </span>
+    </motion.button>
   );
 };
 

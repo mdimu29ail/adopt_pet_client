@@ -1,31 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import useAuth from './useAuth';
-import axios from 'axios';
+import useAxios from './useAxios'; // নিশ্চিত হোন এটি আপনার public axios
 
 const useUserRole = () => {
-  const { user } = useAuth();
-  const [role, setRole] = useState(null);
-  const [roleLoading, setRoleLoading] = useState(true);
+  const { user, loading } = useAuth();
+  const axiosPublic = useAxios(); // Public axios ব্যবহার করুন যেহেতু এই রুটটি ওপেন
 
-  useEffect(() => {
-    if (user?.email) {
-      axios
-        .get(`http://localhost:5000/users/role/${user.email}`)
-        .then(res => {
-          setRole(res.data.role);
-          setRoleLoading(false);
-        })
-        .catch(() => {
-          setRole(null);
-          setRoleLoading(false);
-        });
-    } else {
-      setRole(null);
-      setRoleLoading(false);
-    }
-  }, [user]);
+  const { data: role, isLoading: roleLoading } = useQuery({
+    queryKey: [user?.email, 'userRole'],
+    enabled: !loading && !!user?.email,
+    queryFn: async () => {
+      const res = await axiosPublic.get(`/users/role/${user.email}`);
+      console.log('Frontend Role Check:', res.data.role); // কনসোলে দেখুন কী আসছে
+      return res.data.role;
+    },
+  });
 
-  return { role, roleLoading };
+  return [role, roleLoading];
 };
 
 export default useUserRole;

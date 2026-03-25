@@ -1,62 +1,92 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import Swal from 'sweetalert2';
-import { getAuth } from 'firebase/auth';
+import { motion } from 'framer-motion';
+import {
+  FaPaw,
+  FaArrowLeft,
+  FaCloudUploadAlt,
+  FaSpinner,
+  FaMapMarkerAlt,
+  FaCalendarAlt,
+  FaDog,
+  FaEdit,
+  FaInfoCircle,
+} from 'react-icons/fa';
 import useAuth from '../../hooks/useAuth';
-import axios from 'axios';
+import useAxiosSecure from '../../hooks/useAxiosSecure';
+import { supabase } from '../../Supabase/supabase.config';
 
 const UpdatePet = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const axiosSecure = useAxiosSecure();
 
   const [pet, setPet] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [updateLoading, setUpdateLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
-  const [uploadedImageUrl, setUploadedImageUrl] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
 
+  // ১. সুপাবেস থেকে পেটের তথ্য আনা
   useEffect(() => {
-    fetch(`http://localhost:5000/pets/${id}`)
-      .then(res => res.json())
-      .then(data => {
-        setPet(data);
-        setPreviewUrl(data.image_url);
-        setUploadedImageUrl(data.image_url);
+    const fetchPetData = async () => {
+      try {
+        const res = await axiosSecure.get(`/pets/${id}`);
+        setPet(res.data);
+        setPreviewUrl(res.data.image_url);
         setLoading(false);
-      })
-      .catch(() => {
+      } catch (err) {
+        console.error(err);
         Swal.fire('Error', 'Failed to load pet data.', 'error');
         setLoading(false);
-      });
-  }, [id]);
+      }
+    };
+    fetchPetData();
+  }, [id, axiosSecure]);
 
+  // ২. সরাসরি সুপাবেস স্টোরেজে ইমেজ আপলোড
   const handleImageChange = async e => {
     const file = e.target.files[0];
     if (!file) return;
 
     setPreviewUrl(URL.createObjectURL(file));
-
-    const formData = new FormData();
-    formData.append('image', file);
+    setUploadingImage(true);
 
     try {
-      const apiKey =
-        import.meta.env.VITE_image_upload_key ||
-        '57826cf4e0dd6a90cc9310035762ca80';
-      const res = await axios.post(
-        `https://api.imgbb.com/1/upload?key=${apiKey}`,
-        formData,
-      );
-      const url = res.data?.data?.url;
-      setUploadedImageUrl(url);
+      const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+      const { data, error } = await supabase.storage
+        .from('pet-images') // নিশ্চিত করুন এই বাল্কেটটি আপনার সুপাবেসে আছে
+        .upload(`pets/${fileName}`, file);
+
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage
+        .from('pet-images')
+        .getPublicUrl(`pets/${fileName}`);
+
+      setPet({ ...pet, image_url: urlData.publicUrl });
+      Swal.fire({
+        icon: 'success',
+        title: 'Image Uploaded',
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 1500,
+      });
     } catch (error) {
-      console.log(error);
-      Swal.fire('Image Upload Failed', 'Please try again', 'error');
+      console.error(error);
+      Swal.fire('Error', 'Image upload failed. Try again.', 'error');
+    } finally {
+      setUploadingImage(false);
     }
   };
 
+  // ৩. তথ্য আপডেট সাবমিট করা
   const handleSubmit = async e => {
     e.preventDefault();
+    setUpdateLoading(true);
     const form = e.target;
 
     const updatedPet = {
@@ -66,133 +96,259 @@ const UpdatePet = () => {
       age: form.age.value,
       location: form.location.value,
       status: form.status.value,
-      image_url: uploadedImageUrl || pet.image_url,
+      image_url: pet.image_url,
       description: form.description.value,
     };
 
-    const auth = getAuth();
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      return Swal.fire('Unauthorized', 'Please login to update pets.', 'error');
-    }
-
     try {
-      const token = await currentUser.getIdToken(true);
-      const res = await fetch(`http://localhost:5000/pets/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(updatedPet),
-      });
-
-      const result = await res.json();
-
-      if (result.modifiedCount > 0) {
-        Swal.fire('Success!', 'Pet updated successfully.', 'success');
-        navigate('/dashboard/mypets');
-      } else {
-        Swal.fire('Notice', 'No changes were made.', 'info');
+      const res = await axiosSecure.put(`/pets/${id}`, updatedPet);
+      if (res.data.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Successfully Updated!',
+          text: `${updatedPet.name}'s profile is now updated.`,
+          confirmButtonColor: '#37948b',
+        });
+        navigate('/dashboard/myPets');
       }
     } catch (err) {
       console.error(err);
-      Swal.fire('Error', 'Failed to update pet.', 'error');
+      Swal.fire('Error', 'Failed to update pet profile.', 'error');
+    } finally {
+      setUpdateLoading(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin h-16 w-16 border-4 border-blue-500 border-t-transparent rounded-full"></div>
+      <div className="flex flex-col justify-center items-center h-screen bg-[#FFFBF7] dark:bg-gray-950">
+        <FaPaw className="text-6xl text-[#37948b] animate-bounce mb-4" />
+        <p className="text-[#37948b] font-black uppercase tracking-widest">
+          Loading Profile...
+        </p>
       </div>
     );
   }
 
-  if (!pet) {
-    return <p className="text-center py-10 text-red-500">Pet not found.</p>;
-  }
-
   return (
-    <div className="max-w-4xl mx-auto px-6 py-10 bg-white shadow-xl rounded-xl mt-8">
-      <h2 className="text-4xl font-bold text-center mb-10 text-blue-700">
-        Update Pet
-      </h2>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {[
-            { name: 'name', label: 'Pet Name' },
-            { name: 'type', label: 'Type' },
-            { name: 'breed', label: 'Breed' },
-            { name: 'age', label: 'Age' },
-            { name: 'location', label: 'Location' },
-            { name: 'status', label: 'Status' },
-          ].map(field => (
-            <div key={field.name}>
-              <label className="block mb-2 font-medium text-gray-700">
-                {field.label}
-              </label>
-              <input
-                type="text"
-                name={field.name}
-                defaultValue={pet[field.name]}
-                required={field.name === 'name' || field.name === 'type'}
-                className="input input-bordered w-full"
-              />
+    <div className="min-h-screen w-full bg-[#FFFBF7] dark:bg-gray-950 pt-28 pb-20 px-4 md:px-10 lg:px-20 font-sans">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-6xl mx-auto"
+      >
+        {/* --- Header --- */}
+        <div className="flex flex-col md:flex-row justify-between items-center gap-6 mb-12">
+          <div className="text-center md:text-left">
+            <Link
+              to="/dashboard/myPets"
+              className="inline-flex items-center gap-2 text-[#37948b] font-black text-xs uppercase tracking-widest mb-4 hover:gap-3 transition-all"
+            >
+              <FaArrowLeft /> My Paws Pack
+            </Link>
+            <h2 className="text-4xl md:text-6xl font-black text-gray-900 dark:text-white leading-tight tracking-tighter">
+              Update <span className="text-[#37948b]">Pet Profile</span>
+            </h2>
+          </div>
+          <div className="hidden lg:flex items-center gap-3 bg-white dark:bg-gray-900 p-4 rounded-3xl shadow-xl border border-gray-100 dark:border-gray-800">
+            <div className="w-12 h-12 rounded-2xl bg-teal-50 dark:bg-gray-800 flex items-center justify-center text-[#37948b]">
+              <FaEdit size={24} />
             </div>
-          ))}
+            <div>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">
+                Status
+              </p>
+              <p className="text-sm font-bold text-amber-500">
+                Currently Editing
+              </p>
+            </div>
+          </div>
+        </div>
 
-          <div className="md:col-span-2">
-            <label className="block mb-2 font-medium text-gray-700">
-              Pet Photo
-            </label>
-            <div className="flex flex-col items-center justify-center w-full border-2 border-dashed border-gray-300 rounded-xl p-6 bg-gray-50">
-              <label
-                htmlFor="imageUpload"
-                className="cursor-pointer text-blue-600 hover:text-blue-800 font-medium"
-              >
-                Click to upload a new image
+        <form
+          onSubmit={handleSubmit}
+          className="grid grid-cols-1 lg:grid-cols-12 gap-10"
+        >
+          {/* --- Left Column: Profile Media --- */}
+          <div className="lg:col-span-4 space-y-6">
+            <div className="bg-white dark:bg-gray-900 p-8 rounded-[2.5rem] shadow-xl border border-gray-100 dark:border-gray-800 text-center">
+              <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-6">
+                Profile Photo
               </label>
-              <input
-                type="file"
-                id="imageUpload"
-                accept="image/*"
-                onChange={handleImageChange}
-                className="hidden"
-              />
-              {previewUrl && (
+
+              <div className="relative group w-full aspect-square rounded-[2rem] border-2 border-[#37948b] overflow-hidden shadow-2xl bg-gray-50">
                 <img
                   src={previewUrl}
-                  alt="Preview"
-                  className="mt-4 w-40 h-40 object-cover rounded-md shadow-md"
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                  alt="Pet Preview"
                 />
-              )}
+
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center backdrop-blur-sm cursor-pointer">
+                  <FaCloudUploadAlt size={40} className="text-white mb-2" />
+                  <p className="text-white font-black text-[10px] uppercase tracking-widest">
+                    Change Image
+                  </p>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                  />
+                </div>
+
+                {uploadingImage && (
+                  <div className="absolute inset-0 bg-white/80 dark:bg-black/80 flex items-center justify-center z-20">
+                    <FaSpinner className="animate-spin text-[#37948b] text-4xl" />
+                  </div>
+                )}
+              </div>
+              <p className="mt-4 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                Click to update image
+              </p>
+            </div>
+
+            <div className="bg-teal-50 dark:bg-teal-900/20 p-8 rounded-[2.5rem] border border-teal-100 dark:border-teal-800/30">
+              <div className="flex items-center gap-3 mb-4">
+                <FaInfoCircle className="text-[#37948b]" />
+                <h4 className="font-black text-sm uppercase tracking-widest text-gray-700 dark:text-gray-200">
+                  Owner Info
+                </h4>
+              </div>
+              <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest leading-relaxed">
+                Name: {user?.user_metadata?.full_name || user?.displayName}
+                <br />
+                Email: {user?.email}
+              </p>
             </div>
           </div>
 
-          <div className="md:col-span-2">
-            <label className="block mb-2 font-medium text-gray-700">
-              Description
-            </label>
-            <textarea
-              name="description"
-              rows="3"
-              defaultValue={pet.description}
-              className="textarea textarea-bordered w-full resize-none"
-            ></textarea>
-          </div>
-        </div>
+          {/* --- Right Column: Form Details --- */}
+          <div className="lg:col-span-8">
+            <div className="bg-white dark:bg-gray-900 p-8 md:p-12 rounded-[3rem] shadow-xl border border-gray-100 dark:border-gray-800">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Pet Name */}
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
+                    Pet Name
+                  </label>
+                  <div className="relative">
+                    <FaPaw className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" />
+                    <input
+                      name="name"
+                      defaultValue={pet.name}
+                      required
+                      className="w-full pl-14 pr-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
+                    />
+                  </div>
+                </div>
 
-        <div className="pt-6">
-          <button
-            type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl text-lg font-semibold transition duration-200"
-          >
-            Update Pet
-          </button>
-        </div>
-      </form>
+                {/* Species */}
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
+                    Species
+                  </label>
+                  <div className="relative">
+                    <FaDog className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" />
+                    <input
+                      name="type"
+                      defaultValue={pet.type}
+                      required
+                      className="w-full pl-14 pr-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* Breed */}
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
+                    Breed
+                  </label>
+                  <input
+                    name="breed"
+                    defaultValue={pet.breed}
+                    className="w-full px-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
+                  />
+                </div>
+
+                {/* Age */}
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
+                    Age (Years)
+                  </label>
+                  <div className="relative">
+                    <FaCalendarAlt className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" />
+                    <input
+                      name="age"
+                      defaultValue={pet.age}
+                      className="w-full pl-14 pr-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* Location */}
+                <div className="md:col-span-2 space-y-2">
+                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
+                    Location
+                  </label>
+                  <div className="relative">
+                    <FaMapMarkerAlt className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" />
+                    <input
+                      name="location"
+                      defaultValue={pet.location}
+                      required
+                      className="w-full pl-14 pr-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* Status Selection */}
+                <div className="md:col-span-2 space-y-2">
+                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1">
+                    Current Status
+                  </label>
+                  <select
+                    name="status"
+                    defaultValue={pet.status}
+                    className="w-full px-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all cursor-pointer"
+                  >
+                    <option value="Available">Available</option>
+                    <option value="Adopted">Adopted</option>
+                    <option value="Pending">Pending</option>
+                  </select>
+                </div>
+
+                {/* Description */}
+                <div className="md:col-span-2 space-y-2">
+                  <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
+                    <FaInfoCircle className="text-[#37948b]" /> Full Description
+                  </label>
+                  <textarea
+                    name="description"
+                    rows="5"
+                    defaultValue={pet.description}
+                    className="w-full px-6 py-5 rounded-[2rem] border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all resize-none"
+                  ></textarea>
+                </div>
+              </div>
+
+              <motion.button
+                whileHover={{ scale: 1.02, backgroundColor: '#2d7a72' }}
+                whileTap={{ scale: 0.98 }}
+                type="submit"
+                disabled={updateLoading || uploadingImage}
+                className="w-full mt-10 py-5 bg-[#37948b] text-white font-black rounded-2xl shadow-xl shadow-[#37948b44] flex items-center justify-center gap-3 disabled:opacity-50 text-xs uppercase tracking-[0.2em] transition-all"
+              >
+                {updateLoading ? (
+                  <FaSpinner className="animate-spin text-xl" />
+                ) : (
+                  <FaPaw className="text-xl" />
+                )}
+                {updateLoading ? 'Applying Changes...' : 'Update Profile'}
+              </motion.button>
+            </div>
+          </div>
+        </form>
+      </motion.div>
     </div>
   );
 };

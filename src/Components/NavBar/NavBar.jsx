@@ -1,176 +1,174 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import Swal from 'sweetalert2';
 import { AuthContext } from '../../Auth/AuthContext';
 import Container from '../../Container/Container';
 import Logo from '../Logo/Logo';
+import {
+  FaPaw,
+  FaSignOutAlt,
+  FaSun,
+  FaMoon,
+  FaBars,
+  FaTimes,
+} from 'react-icons/fa';
+import { MdDashboard } from 'react-icons/md'; // মডার্ন ড্যাশবোর্ড আইকন
 
 const NavBar = () => {
   const { user, logOut } = useContext(AuthContext);
   const navigate = useNavigate();
-
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // ✅ ডার্ক মোড এবং লাইট মোড লজিক
   useEffect(() => {
+    const html = document.documentElement;
+    if (theme === 'dark') {
+      html.classList.add('dark');
+      html.setAttribute('data-theme', 'dark'); // DaisyUI থাকলে সুবিধা হবে
+    } else {
+      html.classList.remove('dark');
+      html.setAttribute('data-theme', 'light');
+    }
     localStorage.setItem('theme', theme);
-    document.querySelector('html').setAttribute('data-theme', theme);
+
+    // স্ক্রল ডিটেকশন
+    const handleScroll = () => setIsScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
   }, [theme]);
 
-  const handleToggle = e => setTheme(e.target.checked ? 'dark' : 'light');
+  const handleToggle = () => setTheme(theme === 'dark' ? 'light' : 'dark');
 
   const handleSignOut = async () => {
     try {
       await logOut();
       Swal.fire({
         icon: 'success',
-        title: 'Logout successful!',
-        toast: true,
-        position: 'top-end',
-        showConfirmButton: false,
+        title: 'Logged Out',
+        text: 'Come back soon!',
         timer: 1500,
-        timerProgressBar: true,
+        showConfirmButton: false,
+        background: theme === 'dark' ? '#1f2937' : '#ffffff',
+        color: theme === 'dark' ? '#ffffff' : '#1f2937',
       });
-      setTimeout(() => navigate('/login'), 1600);
+      navigate('/login');
     } catch (error) {
-      Swal.fire({ icon: 'error', title: 'Logout failed', text: error.message });
+      Swal.fire({ icon: 'error', title: 'Error', text: error.message });
     }
   };
 
-  const links = (
-    <>
-      {['Home', 'Pet Listing', 'Donation Campaigns'].map((text, idx) => {
-        const path =
-          text === 'Home'
-            ? '/'
-            : text === 'Pet Listing'
-            ? '/petListing'
-            : '/donationCampaigns';
-        return (
-          <li key={idx} className="px-2">
-            <NavLink
-              to={path}
-              className={({ isActive }) =>
-                `font-semibold rounded-2xl px-2 py-1 transition-colors duration-300 ${
-                  isActive
-                    ? 'text-orange-500 border border-orange-500'
-                    : 'text-orange-500 hover:border hover:border-orange-500 hover:bg-orange-50'
-                }`
-              }
-            >
-              {text}
-            </NavLink>
-          </li>
-        );
-      })}
+  const navLinks = [
+    { text: 'Home', path: '/' },
+    { text: 'Pet Listing', path: '/petListing' },
+    { text: 'Donation Campaigns', path: '/donationCampaigns' },
+  ];
 
-      {user && (
-        <li className="px-2">
-          <NavLink
-            to="/blogs"
-            className={({ isActive }) =>
-              `font-semibold rounded-2xl px-2 py-1 transition-colors duration-300 ${
-                isActive
-                  ? 'text-orange-500 border border-orange-500'
-                  : 'text-orange-500 hover:border hover:border-orange-500 hover:bg-orange-50'
-              }`
-            }
-          >
-            Blogs
-          </NavLink>
-        </li>
-      )}
-      {user && (
-        <li className="px-2">
-          <NavLink
-            to="/events"
-            className={({ isActive }) =>
-              `font-semibold rounded-2xl px-2 py-1 transition-colors duration-300 ${
-                isActive
-                  ? 'text-orange-500 border border-orange-500'
-                  : 'text-orange-500 hover:border hover:border-orange-500 hover:bg-orange-50'
-              }`
-            }
-          >
-            Events
-          </NavLink>
-        </li>
-      )}
-    </>
-  );
+  if (user) {
+    navLinks.push({ text: 'Blogs', path: '/blogs' });
+    navLinks.push({ text: 'Events', path: '/events' });
+  }
 
   return (
-    <div className="shadow-sm sticky top-0 bg-white z-40 shadow-orange-300">
+    <motion.div
+      initial={{ y: -100 }}
+      animate={{ y: 0 }}
+      className={`fixed top-0 w-full z-50 transition-all duration-500 ${
+        isScrolled
+          ? 'bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl shadow-lg py-2'
+          : 'bg-[#FFFBF7] dark:bg-gray-950 py-4'
+      }`}
+    >
       <Container>
-        <div className="navbar">
-          <div className="navbar-start">
-            <div className="dropdown">
-              <div
-                tabIndex={0}
-                role="button"
-                className="btn btn-ghost lg:hidden"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 text-orange-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="M4 6h16M4 12h8m-8 6h16"
-                  />
-                </svg>
-              </div>
-              <ul
-                tabIndex={0}
-                className="menu menu-sm dropdown-content bg-base-100 rounded-box z-10 mt-3 w-52 p-2 shadow space-y-3 text-orange-500"
-              >
-                {links}
-              </ul>
-            </div>
+        <div className="flex items-center justify-between">
+          {/* --- Logo --- */}
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
             <Logo />
+          </motion.div>
+
+          {/* --- Desktop Links --- */}
+          <div className="hidden lg:flex items-center gap-1">
+            {navLinks.map((link, idx) => (
+              <NavLink
+                key={idx}
+                to={link.path}
+                className={({ isActive }) =>
+                  `relative px-4 py-2 font-bold text-sm transition-all duration-300 ${
+                    isActive
+                      ? 'text-[#37948b]'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-[#37948b] dark:hover:text-[#37948b]'
+                  }`
+                }
+              >
+                {link.text}
+                <motion.span
+                  className="absolute bottom-0 left-0 w-full h-0.5 bg-[#37948b]"
+                  initial={{ scaleX: 0 }}
+                  whileHover={{ scaleX: 1 }}
+                />
+              </NavLink>
+            ))}
           </div>
 
-          <div className="navbar-center hidden lg:flex">
-            <ul className="menu menu-horizontal px-1 text-orange-500">
-              {links}
-            </ul>
-          </div>
+          {/* --- Right Actions --- */}
+          <div className="flex items-center gap-3">
+            {/* 🌗 Theme Toggle Switch */}
+            {/* <motion.button
+              whileTap={{ scale: 0.8, rotate: 90 }}
+              onClick={handleToggle}
+              className="p-2.5 rounded-full bg-gray-100 dark:bg-gray-800 text-[#37948b] transition-colors border border-gray-200 dark:border-gray-700"
+              title={theme === 'dark' ? 'Switch to Light' : 'Switch to Dark'}
+            >
+              {theme === 'dark' ? <FaSun size={18} /> : <FaMoon size={18} />}
+            </motion.button> */}
 
-          <div className="navbar-end flex items-center space-x-3">
+            {/* Auth User */}
             {user ? (
               <div className="dropdown dropdown-end">
-                <div
+                <motion.div
                   tabIndex={0}
                   role="button"
-                  className="btn btn-ghost btn-circle avatar hover:ring-2 hover:ring-orange-400 transition"
+                  whileHover={{ scale: 1.05 }}
+                  className="avatar online"
                 >
-                  <div className="w-10 rounded-full border border-orange-500 flex items-center overflow-hidden">
+                  <div className="w-10 h-10 rounded-full ring-2 ring-[#37948b] ring-offset-2 ring-offset-white dark:ring-offset-gray-900 overflow-hidden">
                     <img
-                      alt="Avatar"
-                      src={user.photoURL || 'https://via.placeholder.com/150'}
-                      className="object-cover w-full h-full"
+                      alt="Profile"
+                      src={
+                        user?.user_metadata?.avatar_url ||
+                        'https://i.ibb.co/mJR657F/user-placeholder.png'
+                      }
                     />
                   </div>
-                </div>
-                <ul className="menu menu-sm dropdown-content bg-base-100 rounded-box z-10 mt-3 w-52 p-2 shadow text-orange-500">
-                  <li>
-                    <NavLink
-                      to="/dashboard"
-                      className="w-full text-left px-4 py-2 rounded font-semibold border border-orange-500 hover:bg-orange-500 hover:text-white transition"
-                    >
-                      Dashboard
-                    </NavLink>
+                </motion.div>
+                <ul
+                  tabIndex={0}
+                  className="dropdown-content z-[1] menu p-3 shadow-2xl bg-white dark:bg-gray-800 rounded-2xl w-60 mt-4 border border-gray-100 dark:border-gray-700 transition-colors"
+                >
+                  <li className="mb-2 px-4 py-2 border-b dark:border-gray-700">
+                    <p className="font-black text-[#37948b] truncate">
+                      {user?.user_metadata?.full_name || 'Pet Lover'}
+                    </p>
+                    <p className="text-[10px] text-gray-400 truncate font-bold">
+                      {user?.email}
+                    </p>
                   </li>
-                  <li className="mt-3">
+                  <li>
+                    <Link
+                      to="/dashboard"
+                      className="flex items-center gap-3 py-3 font-bold text-gray-700 dark:text-gray-200 hover:text-[#37948b] dark:hover:text-[#37948b]"
+                    >
+                      <MdDashboard className="text-xl" /> Dashboard
+                    </Link>
+                  </li>
+                  <li>
                     <button
                       onClick={handleSignOut}
-                      className="w-full text-left px-4 py-2 rounded font-semibold border border-orange-500 hover:bg-orange-500 hover:text-white transition"
+                      className="flex items-center gap-3 py-3 font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
                     >
-                      Log Out
+                      <FaSignOutAlt /> Log Out
                     </button>
                   </li>
                 </ul>
@@ -178,50 +176,66 @@ const NavBar = () => {
             ) : (
               <Link
                 to="/login"
-                className="px-5 py-2 rounded-2xl border border-orange-500 text-orange-500 font-bold hover:bg-orange-200 transition"
+                className="hidden sm:flex items-center gap-2 px-6 py-2.5 rounded-full bg-[#37948b] text-white font-black hover:bg-[#2d7a72] shadow-lg shadow-[#37948b33] transition-all"
               >
-                Login
+                Join Now <FaPaw />
               </Link>
             )}
 
-            <div className="hidden lg:block md:hidden">
-              {user?.displayName && (
-                <span className="text-sm font-semibold text-orange-500">
-                  {user.displayName}
-                </span>
-              )}
-            </div>
-
-            {/* Theme Toggle */}
-            <div className="ml-3 border border-orange-500 rounded-full p-1">
-              <label className="swap swap-rotate cursor-pointer">
-                <input
-                  type="checkbox"
-                  onChange={handleToggle}
-                  checked={theme === 'dark'}
-                />
-                {/* Sun icon */}
-                <svg
-                  className="swap-on h-6 w-6 fill-current text-orange-500"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M5.64,17l-.71.71a1,1,0,0,0,0,1.41,1,1,0,0,0,1.41,0l.71-.71A1,1,0,0,0,5.64,17ZM5,12a1,1,0,0,0-1-1H3a1,1,0,0,0,0,2H4A1,1,0,0,0,5,12Zm7-7a1,1,0,0,0,1-1V3a1,1,0,0,0-2,0V4A1,1,0,0,0,12,5ZM5.64,7.05a1,1,0,0,0,.7.29,1,1,0,0,0,.71-.29,1,1,0,0,0,0-1.41l-.71-.71A1,1,0,0,0,4.93,6.34Zm12,.29a1,1,0,0,0,.7-.29l.71-.71a1,1,0,1,0-1.41-1.41L17,5.64a1,1,0,0,0,0,1.41A1,1,0,0,0,17.66,7.34ZM21,11H20a1,1,0,0,0,0,2h1a1,1,0,0,0,0-2Zm-9,8a1,1,0,0,0-1,1v1a1,1,0,0,0,2,0V20A1,1,0,0,0,12,19ZM18.36,17A1,1,0,0,0,17,18.36l.71.71a1,1,0,0,0,1.41,0,1,1,0,0,0,0-1.41ZM12,6.5A5.5,5.5,0,1,0,17.5,12,5.51,5.51,0,0,0,12,6.5Zm0,9A3.5,3.5,0,1,1,15.5,12,3.5,3.5,0,0,1,12,15.5Z" />
-                </svg>
-                {/* Moon icon */}
-                <svg
-                  className="swap-off h-6 w-6 fill-current text-orange-500"
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M21.64,13a1,1,0,0,0-1.05-.14,8.05,8.05,0,0,1-3.37.73A8.15,8.15,0,0,1,9.08,5.49a8.59,8.59,0,0,1,.25-2A1,1,0,0,0,8,2.36,10.14,10.14,0,1,0,22,14.05,1,1,0,0,0,21.64,13Zm-9.5,6.69A8.14,8.14,0,0,1,7.08,5.22v.27A10.15,10.15,0,0,0,17.22,15.63a9.79,9.79,0,0,0,2.1-.22A8.11,8.11,0,0,1,12.14,19.73Z" />
-                </svg>
-              </label>
-            </div>
+            {/* Mobile Menu Btn */}
+            <button
+              className="lg:hidden p-2 text-[#37948b] bg-gray-100 dark:bg-gray-800 rounded-lg"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            >
+              {isMobileMenuOpen ? <FaTimes size={22} /> : <FaBars size={22} />}
+            </button>
           </div>
         </div>
+
+        {/* --- Mobile Menu --- */}
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="lg:hidden mt-4 overflow-hidden bg-white dark:bg-gray-800 rounded-3xl shadow-xl border border-gray-100 dark:border-gray-700"
+            >
+              <ul className="p-4 space-y-1">
+                {navLinks.map((link, idx) => (
+                  <li key={idx}>
+                    <NavLink
+                      to={link.path}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={({ isActive }) =>
+                        `block px-5 py-3.5 rounded-2xl font-bold transition-all ${
+                          isActive
+                            ? 'bg-[#37948b] text-white'
+                            : 'text-gray-600 dark:text-gray-300 hover:bg-teal-50 dark:hover:bg-gray-700 hover:text-[#37948b]'
+                        }`
+                      }
+                    >
+                      {link.text}
+                    </NavLink>
+                  </li>
+                ))}
+                {!user && (
+                  <li>
+                    <Link
+                      to="/login"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className="block px-4 py-4 mt-2 bg-[#37948b] text-white rounded-2xl text-center font-black shadow-lg"
+                    >
+                      Login
+                    </Link>
+                  </li>
+                )}
+              </ul>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </Container>
-    </div>
+    </motion.div>
   );
 };
 

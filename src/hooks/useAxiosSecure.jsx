@@ -1,31 +1,38 @@
-// hooks/useAxiosSecure.js
-import { useEffect } from 'react';
 import axios from 'axios';
-import { onIdTokenChanged } from 'firebase/auth';
-import { auth } from '../firebase/firebase.config';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../Supabase/supabase.config';
 
 const axiosSecure = axios.create({
-  baseURL: 'http://localhost:5000',
-  withCredentials: true,
+  baseURL: 'https://pet-adopton-sarver.vercel.app',
 });
 
 const useAxiosSecure = () => {
-  useEffect(() => {
-    const unsubscribe = onIdTokenChanged(auth, async user => {
-      if (user) {
-        const token = await user.getIdToken();
-        axiosSecure.defaults.headers.common['Authorization'] =
-          `Bearer ${token}`;
-        // ✅ You can log it for debug
-        console.log('✅ Firebase token set in header:', token);
-      } else {
-        delete axiosSecure.defaults.headers.common['Authorization'];
-        console.warn('⚠️ No user - token removed');
-      }
-    });
+  const navigate = useNavigate();
 
-    return () => unsubscribe();
-  }, []);
+  axiosSecure.interceptors.request.use(
+    async config => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (token) {
+        config.headers.authorization = `Bearer ${token}`;
+      }
+      return config;
+    },
+    error => Promise.reject(error),
+  );
+
+  axiosSecure.interceptors.response.use(
+    response => response,
+    async error => {
+      if (error.response.status === 401 || error.response.status === 403) {
+        await supabase.auth.signOut();
+        navigate('/login');
+      }
+      return Promise.reject(error);
+    },
+  );
 
   return axiosSecure;
 };

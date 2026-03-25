@@ -1,12 +1,12 @@
 import axios from 'axios';
-import React from 'react';
 
-const axiosInstance = axios.create({
-  baseURL: `http://localhost:5000`,
+const axiosPublic = axios.create({
+  baseURL:
+    import.meta.env.VITE_API_URL || 'https://pet-adopton-sarver.vercel.app', // আপনার ব্যাকএন্ড ইউআরএল
 });
 
 const useAxios = () => {
-  return axiosInstance;
+  return axiosPublic;
 };
 
 export default useAxios;

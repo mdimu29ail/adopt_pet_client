@@ -1,85 +1,109 @@
-import {
-  createUserWithEmailAndPassword,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  signOut,
-  updateProfile,
-} from 'firebase/auth';
-
 import { useEffect, useState } from 'react';
-
-import axios from 'axios';
 import { AuthContext } from './AuthContext';
-import { auth } from '../Firebase/firebase.config';
+import { supabase } from '../Supabase/supabase.config';
 
-const provider = new GoogleAuthProvider();
 const AuthProvider = ({ children }) => {
-  const [loading, setLoading] = useState();
-
   const [user, setUser] = useState(null);
-  const createUser = (email, password) => {
+  const [loading, setLoading] = useState(true);
+
+  // ১. নতুন ইউজার তৈরি (Email/Password)
+  const createUser = async (email, password, fullName, photoUrl) => {
     setLoading(true);
-    return createUserWithEmailAndPassword(auth, email, password);
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          avatar_url: photoUrl,
+        },
+      },
+    });
+    return { data, error };
   };
 
-  const logIn = (email, password) => {
+  // ২. লগইন (Email/Password)
+  const signIn = async (email, password) => {
     setLoading(true);
-    return signInWithEmailAndPassword(auth, email, password);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    return { data, error };
   };
 
-  const signinWithGoogle = () => {
+  // ৩. সোশ্যাল লগইন (Google)
+  const googleLogin = async () => {
     setLoading(true);
-    return signInWithPopup(auth, provider);
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin, // লগইন শেষে অ্যাপে ফিরবে
+      },
+    });
+    return { data, error };
   };
 
-  const updateUserProfile = profileInfo => {
-    return updateProfile(auth.currentUser, profileInfo);
+  // ৪. প্রোফাইল আপডেট (Metadata update)
+  const updateUserProfile = async (fullName, photoUrl) => {
+    const { data, error } = await supabase.auth.updateUser({
+      data: { full_name: fullName, avatar_url: photoUrl },
+    });
+    return { data, error };
   };
 
-  const logOut = () => {
+  // ৫. লগআউট
+  const logOut = async () => {
     setLoading(true);
-    signOut(auth);
+    const { error } = await supabase.auth.signOut();
+    if (!error) {
+      setUser(null);
+    }
+    setLoading(false);
   };
 
+  // ৬. ইউজার স্টেট অবজার্ভার (onAuthStateChange)
   useEffect(() => {
-    const unSubscribe = onAuthStateChanged(auth, currentUser => {
-      setUser(currentUser);
+    // কারেন্ট সেশন চেক করা
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    // সেশন পরিবর্তনের ওপর নজর রাখা (Login/Logout/Token Refresh)
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Supabase Auth Event:', event);
+      setUser(session?.user ?? null);
       setLoading(false);
 
-      if (currentUser?.email) {
-        const userData = { email: currentUser.email };
-        axios
-          .post(
-            'https://my-assignment-11-server-lac.vercel.app/jwt',
-            userData,
-            {
-              withCredentials: true,
-            }
-          )
-          .then(res => console.log('token', res.data))
-          .catch(err => {
-            console.log(err);
-          });
+      if (session) {
+        // টোকেন লোকাল স্টোরেজে রাখা (AxiosSecure এর জন্য)
+        localStorage.setItem('access-token', session.access_token);
+      } else {
+        localStorage.removeItem('access-token');
       }
     });
+
     return () => {
-      unSubscribe();
+      subscription.unsubscribe();
     };
   }, []);
 
-  const userInfo = {
-    createUser,
-    loading,
-    logIn,
-    signinWithGoogle,
+  const authInfo = {
     user,
+    loading,
+    createUser,
+    signIn,
+    googleLogin,
     logOut,
-    setLoading,
     updateUserProfile,
   };
-  return <AuthContext value={userInfo}>{children}</AuthContext>;
+
+  return (
+    <AuthContext.Provider value={authInfo}>{children}</AuthContext.Provider>
+  );
 };
 
 export default AuthProvider;

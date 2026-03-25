@@ -1,3 +1,5 @@
+//EventsData.js
+
 export const events = [
   {
     id: 1,
