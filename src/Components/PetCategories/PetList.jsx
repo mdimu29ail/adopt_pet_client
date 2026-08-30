@@ -5,29 +5,38 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 import { FaPaw, FaArrowRight, FaSearch, FaMapMarkerAlt } from 'react-icons/fa';
-import useAxios from '../../hooks/useAxios';
+import { supabase } from '../../Supabase/supabase.config';
 
 const PetList = () => {
   const [category, setCategory] = useState('All');
   const [pets, setPets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAll, setShowAll] = useState(false);
-  const axiosPublic = useAxios();
   const navigate = useNavigate();
 
   useEffect(() => {
-    setLoading(true);
-    axiosPublic
-      .get('/pets')
-      .then(res => {
-        setPets(res.data);
-        setLoading(false);
-      })
-      .catch(err => {
+    const fetchPets = async () => {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('pets')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        // Console log করে দেখুন ডাটা ঠিকমতো আসছে কি না
+        console.log('Fetched Pets: ', data);
+
+        setPets(data || []);
+      } catch (err) {
         console.error('Error fetching pets:', err);
+      } finally {
         setLoading(false);
-      });
-  }, [axiosPublic]);
+      }
+    };
+    fetchPets();
+  }, []);
 
   const handleViewDetails = id => {
     navigate(`/dashboard/pets/${id}`);
@@ -36,20 +45,20 @@ const PetList = () => {
   const filteredPets =
     category === 'All' ? pets : pets.filter(pet => pet.type === category);
 
-  const petsToShow = showAll ? filteredPets : filteredPets.slice(0, 10); // ১০টি ডিফল্ট দেখাবে
+  const petsToShow = showAll ? filteredPets : filteredPets.slice(0, 10);
 
-  // এনিমেশন ভেরিয়েন্ট
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
-      transition: { staggerChildren: 0.05 },
+      transition: { staggerChildren: 0.1 },
     },
   };
 
   const cardVariants = {
-    hidden: { y: 30, opacity: 0 },
+    hidden: { y: 20, opacity: 0 },
     visible: { y: 0, opacity: 1 },
+    exit: { y: -20, opacity: 0 },
   };
 
   return (
@@ -86,7 +95,7 @@ const PetList = () => {
           </div>
         </div>
 
-        {/* --- Pets Grid (Full Width & Dynamic Columns) --- */}
+        {/* --- Pets Grid --- */}
         <motion.div
           variants={containerVariants}
           initial="hidden"
@@ -95,7 +104,6 @@ const PetList = () => {
           className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 xl:gap-8"
         >
           {loading ? (
-            // --- Premium Skeleton Loader ---
             Array.from({ length: 10 }).map((_, idx) => (
               <div
                 key={idx}
@@ -110,32 +118,35 @@ const PetList = () => {
               </div>
             ))
           ) : (
-            <AnimatePresence mode="popLayout">
-              {petsToShow.map(pet => (
+            // mode="popLayout" রিমুভ করা হয়েছে
+            <AnimatePresence>
+              {petsToShow.map((pet, index) => (
                 <motion.div
-                  key={pet.id || pet._id}
+                  key={pet.id || index} // Fallback index যোগ করা হয়েছে
                   variants={cardVariants}
-                  layout
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
                   whileHover={{ y: -12 }}
+                  // layout রিমুভ করা হয়েছে
                   className="group bg-white dark:bg-gray-900 rounded-[2.5rem] p-4 shadow-xl shadow-teal-900/5 hover:shadow-[#37948b1a] border border-transparent hover:border-[#37948b]/20 transition-all duration-500 relative flex flex-col h-full"
                 >
-                  {/* Image Container with Overlay */}
+                  {/* Image Container */}
                   <div className="relative aspect-[4/5] w-full overflow-hidden rounded-[2rem]">
                     <img
-                      src={pet.image_url}
+                      src={pet.image_url || 'https://via.placeholder.com/400'}
                       alt={pet.name}
                       className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
                     />
 
-                    {/* Status Badge */}
                     <div className="absolute top-4 left-4 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md px-4 py-1.5 rounded-full text-[10px] font-black text-[#37948b] shadow-lg uppercase tracking-widest border border-white/20">
                       {pet.status || 'Available'}
                     </div>
 
-                    {/* Quick Info Overlay on Hover */}
                     <div className="absolute inset-0 bg-gradient-to-t from-[#37948b]/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex items-end p-6">
                       <p className="text-white text-xs font-bold flex items-center gap-1">
-                        <FaMapMarkerAlt /> California, USA
+                        <FaMapMarkerAlt />{' '}
+                        {pet.location || 'Location Not Specified'}
                       </p>
                     </div>
                   </div>
@@ -144,7 +155,7 @@ const PetList = () => {
                   <div className="mt-6 px-2 flex flex-col flex-grow">
                     <div className="flex justify-between items-center mb-3">
                       <h3 className="text-2xl font-black text-gray-800 dark:text-white group-hover:text-[#37948b] transition-colors truncate">
-                        {pet.name}
+                        {pet.name || 'Unknown Pet'}
                       </h3>
                       <div className="bg-teal-50 dark:bg-gray-800 p-2 rounded-xl text-[#37948b]">
                         <FaPaw size={14} />
@@ -153,7 +164,7 @@ const PetList = () => {
 
                     <div className="flex items-center gap-3 mb-6">
                       <span className="text-[10px] uppercase font-black tracking-widest text-gray-400 dark:text-gray-500">
-                        {pet.type}
+                        {pet.type || 'Unknown'}
                       </span>
                       <span className="w-1 h-1 rounded-full bg-gray-300" />
                       <span className="text-[10px] uppercase font-black tracking-widest text-gray-400 dark:text-gray-500 truncate">
@@ -163,7 +174,7 @@ const PetList = () => {
 
                     <motion.button
                       whileTap={{ scale: 0.95 }}
-                      onClick={() => handleViewDetails(pet.id || pet._id)}
+                      onClick={() => handleViewDetails(pet.id)}
                       className="mt-auto w-full py-4 bg-[#37948b] text-white font-black rounded-2xl shadow-xl shadow-[#37948b33] flex items-center justify-center gap-2 group/btn hover:bg-[#2d7a72] transition-all overflow-hidden relative"
                     >
                       <span className="z-10 flex items-center gap-2">

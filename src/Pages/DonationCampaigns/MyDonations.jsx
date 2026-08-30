@@ -2,7 +2,8 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import useAuth from '../../hooks/useAuth';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
+// import useAxiosSecure from '../../hooks/useAxiosSecure'; // এর আর প্রয়োজন নেই
+import { supabase } from '../../Supabase/supabase.config'; // Supabase Client ইম্পোর্ট
 import Loading from '../../Loading/Loading';
 import {
   FaHistory,
@@ -15,7 +16,7 @@ import {
 
 const MyDonations = () => {
   const { user } = useAuth();
-  const axiosSecure = useAxiosSecure();
+  // const axiosSecure = useAxiosSecure(); // রিমুভ করা হয়েছে
 
   const {
     data: payments = [],
@@ -25,11 +26,18 @@ const MyDonations = () => {
     queryKey: ['my-donations', user?.email],
     queryFn: async () => {
       if (!user?.email) return [];
-      // ব্যাকএন্ড থেকে পেমেন্ট হিস্ট্রি আনা হচ্ছে
-      const res = await axiosSecure.get(
-        `/payments?email=${encodeURIComponent(user.email)}`,
-      );
-      return res.data;
+
+      // Supabase থেকে পেমেন্ট হিস্ট্রি আনা হচ্ছে
+      const { data, error } = await supabase
+        .from('payments') // আপনার পেমেন্ট টেবিলের নাম
+        .select('*')
+        .eq('email', user.email) // ইউজারের ইমেইল অনুযায়ী ফিল্টার
+        .order('paid_at', { ascending: false }); // নতুন পেমেন্টগুলো আগে দেখানোর জন্য
+
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data || [];
     },
     enabled: !!user?.email,
   });
@@ -45,7 +53,8 @@ const MyDonations = () => {
     return (
       <div className="min-h-screen flex items-center justify-center p-6">
         <div className="bg-red-50 text-red-600 p-6 rounded-[2rem] border border-red-100 font-bold text-center italic">
-          ⚠️ Failed to load donation data. Please check your Supabase columns.
+          ⚠️ Failed to load donation data. Please check your Supabase connection
+          and policies.
         </div>
       </div>
     );
@@ -53,7 +62,7 @@ const MyDonations = () => {
 
   const totalAmount = payments.reduce(
     (sum, donation) => sum + Number(donation.amount || 0),
-    0,
+    0
   );
 
   return (
@@ -98,7 +107,7 @@ const MyDonations = () => {
 
         {/* --- Table --- */}
         {payments.length === 0 ? (
-          <div className="text-center py-32 bg-white dark:bg-gray-900 rounded-[3rem] shadow-xl border-2 border-dashed border-gray-100">
+          <div className="text-center py-32 bg-white dark:bg-gray-900 rounded-[3rem] shadow-xl border-2 border-dashed border-gray-100 dark:border-gray-800">
             <FaPaw className="mx-auto text-6xl text-gray-100 mb-6" />
             <h3 className="text-2xl font-black text-gray-400 uppercase tracking-widest">
               No donations found
@@ -125,7 +134,7 @@ const MyDonations = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-                  {payments.map((p, index) => (
+                  {payments.map(p => (
                     <tr
                       key={p.id}
                       className="group hover:bg-teal-50/30 dark:hover:bg-teal-900/10 transition-colors"
@@ -138,7 +147,10 @@ const MyDonations = () => {
                               {p.transaction_id}
                             </p>
                             <p className="text-[10px] font-black text-gray-400 uppercase">
-                              Ref ID: {p.donation_id?.slice(0, 8)}...
+                              Ref ID:{' '}
+                              {p.donation_id?.slice(0, 8) ||
+                                p.campaign_id?.slice(0, 8)}
+                              ...
                             </p>
                           </div>
                         </div>
@@ -152,7 +164,9 @@ const MyDonations = () => {
                       <td className="p-8 text-sm font-bold text-gray-500">
                         <div className="flex items-center gap-2">
                           <FaClock className="text-[#37948b]" size={12} />
-                          {new Date(p.paid_at).toLocaleDateString('en-US', {
+                          {new Date(
+                            p.paid_at || p.created_at
+                          ).toLocaleDateString('en-US', {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric',

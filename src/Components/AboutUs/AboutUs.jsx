@@ -37,7 +37,7 @@ const AboutUs = () => {
         <div className="absolute bottom-[10%] right-[-5%] w-96 h-96 bg-[#4DB6AC] rounded-full blur-[150px]" />
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 relative z-10">
+      <div className="container mx-auto px-6 relative z-10">
         <div className="flex flex-col lg:flex-row items-center gap-20">
           {/* --- Left Side: Multi-Image Mosaic --- */}
           <div className="w-full lg:w-1/2 relative">

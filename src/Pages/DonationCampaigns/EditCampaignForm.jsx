@@ -17,12 +17,11 @@ import {
   FaPaw,
 } from 'react-icons/fa';
 import { supabase } from '../../Supabase/supabase.config';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
+// import useAxiosSecure from '../../hooks/useAxiosSecure'; // এর আর প্রয়োজন নেই
 
 const EditDonationCampaign = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const axiosSecure = useAxiosSecure();
 
   const [campaign, setCampaign] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -30,14 +29,20 @@ const EditDonationCampaign = () => {
   const [updateLoading, setUpdateLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
 
-  // ১. ক্যাম্পেইন ডাটা লোড করা (সুপাবেস আইডি অনুযায়ী)
+  // ১. ক্যাম্পেইন ডাটা লোড করা (সুপাবেস থেকে)
   useEffect(() => {
     if (!id) return;
 
     const fetchCampaign = async () => {
       try {
-        const res = await axiosSecure.get(`/campaigns/${id}`);
-        const data = res.data;
+        const { data, error } = await supabase
+          .from('campaigns') // আপনার টেবিলের নাম
+          .select('*')
+          .eq('id', id)
+          .single(); // যেহেতু একটি মাত্র ডাটা আনবো
+
+        if (error) throw error;
+
         setCampaign(data);
         setPreviewUrl(data.pet_image || '');
         setLoading(false);
@@ -53,9 +58,9 @@ const EditDonationCampaign = () => {
       }
     };
     fetchCampaign();
-  }, [id, axiosSecure]);
+  }, [id]);
 
-  // ২. সরাসরি সুপাবেস স্টোরেজে ইমেজ আপডেট
+  // ২. সরাসরি সুপাবেস স্টোরেজে ইমেজ আপডেট (নিরাপদ ফাইলের নাম সহ)
   const handleImageUpload = async e => {
     const file = e.target.files[0];
     if (!file) return;
@@ -64,9 +69,12 @@ const EditDonationCampaign = () => {
     setImageUploading(true);
 
     try {
-      const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+      // স্পেশাল ক্যারেক্টার বা বাংলা নাম এড়াতে রেনডম ফাইল নেম জেনারেট
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}.${fileExt}`;
+
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('campaign-images') // আপনার সুপাবেস বাল্কেট নাম
+        .from('campaign-images') // আপনার সুপাবেস বাকেট নাম
         .upload(`campaigns/${fileName}`, file);
 
       if (uploadError) throw uploadError;
@@ -94,7 +102,7 @@ const EditDonationCampaign = () => {
     }
   };
 
-  // ৩. তথ্য আপডেট সাবমিট করা
+  // ৩. তথ্য আপডেট সাবমিট করা (সুপাবেস ডাটাবেসে)
   const handleSubmit = async e => {
     e.preventDefault();
     setUpdateLoading(true);
@@ -111,10 +119,16 @@ const EditDonationCampaign = () => {
     };
 
     try {
-      // ব্যাকএন্ডে PATCH রিকোয়েস্ট পাঠানো হচ্ছে
-      const res = await axiosSecure.patch(`/campaigns/${id}`, updatedData);
+      // Supabase-এ Update রিকোয়েস্ট পাঠানো হচ্ছে
+      const { data, error } = await supabase
+        .from('campaigns')
+        .update(updatedData)
+        .eq('id', id)
+        .select();
 
-      if (res.data.success || res.data.modifiedCount > 0) {
+      if (error) throw error;
+
+      if (data && data.length > 0) {
         Swal.fire({
           icon: 'success',
           title: 'Successfully Updated!',
@@ -124,19 +138,15 @@ const EditDonationCampaign = () => {
         });
         navigate('/dashboard/my-campaigns');
       } else {
-        Swal.fire('Info', 'No changes were made to save.', 'info');
+        Swal.fire('Info', 'No changes were made or record not found.', 'info');
       }
     } catch (err) {
-      console.error('❌ Update Failed:', err.response?.data || err.message);
-
-      const errorMsg =
-        err.response?.data?.message ||
-        'Connection lost or Database restricted (RLS).';
+      console.error('❌ Update Failed:', err.message);
 
       Swal.fire({
         icon: 'error',
         title: 'Update Failed',
-        text: errorMsg,
+        text: err.message || 'Connection lost or Database restricted (RLS).',
         confirmButtonColor: '#37948b',
       });
     } finally {

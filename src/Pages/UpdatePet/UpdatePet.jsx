@@ -14,14 +14,13 @@ import {
   FaInfoCircle,
 } from 'react-icons/fa';
 import useAuth from '../../hooks/useAuth';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
+// import useAxiosSecure from '../../hooks/useAxiosSecure'; // এর আর প্রয়োজন নেই
 import { supabase } from '../../Supabase/supabase.config';
 
 const UpdatePet = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const axiosSecure = useAxiosSecure();
 
   const [pet, setPet] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -31,22 +30,37 @@ const UpdatePet = () => {
 
   // ১. সুপাবেস থেকে পেটের তথ্য আনা
   useEffect(() => {
+    if (!id) return;
+
     const fetchPetData = async () => {
       try {
-        const res = await axiosSecure.get(`/pets/${id}`);
-        setPet(res.data);
-        setPreviewUrl(res.data.image_url);
-        setLoading(false);
+        const { data, error } = await supabase
+          .from('pets')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (error) throw error;
+
+        setPet(data);
+        setPreviewUrl(data.image_url || '');
       } catch (err) {
-        console.error(err);
-        Swal.fire('Error', 'Failed to load pet data.', 'error');
+        console.error('Fetch Error:', err.message);
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'Failed to load pet data from Supabase.',
+          confirmButtonColor: '#37948b',
+        });
+      } finally {
         setLoading(false);
       }
     };
-    fetchPetData();
-  }, [id, axiosSecure]);
 
-  // ২. সরাসরি সুপাবেস স্টোরেজে ইমেজ আপলোড
+    fetchPetData();
+  }, [id]);
+
+  // ২. সরাসরি সুপাবেস স্টোরেজে ইমেজ আপলোড (নিরাপদ নাম সহ)
   const handleImageChange = async e => {
     const file = e.target.files[0];
     if (!file) return;
@@ -55,18 +69,24 @@ const UpdatePet = () => {
     setUploadingImage(true);
 
     try {
-      const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+      // স্পেশাল ক্যারেক্টার ও বাংলা ফন্ট এড়াতে রেন্ডম নিরাপদ নাম তৈরি
+      const fileExt = file.name.split('.').pop();
+      const safeFileName = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}.${fileExt}`;
+
       const { data, error } = await supabase.storage
-        .from('pet-images') // নিশ্চিত করুন এই বাল্কেটটি আপনার সুপাবেসে আছে
-        .upload(`pets/${fileName}`, file);
+        .from('pet-images') // নিশ্চিত করুন এই বাকেটটি আপনার সুপাবেসে আছে
+        .upload(`pets/${safeFileName}`, file);
 
       if (error) throw error;
 
       const { data: urlData } = supabase.storage
         .from('pet-images')
-        .getPublicUrl(`pets/${fileName}`);
+        .getPublicUrl(`pets/${safeFileName}`);
 
-      setPet({ ...pet, image_url: urlData.publicUrl });
+      // স্টেট আপডেট
+      setPet(prev => ({ ...prev, image_url: urlData.publicUrl }));
+      setPreviewUrl(urlData.publicUrl);
+
       Swal.fire({
         icon: 'success',
         title: 'Image Uploaded',
@@ -76,7 +96,7 @@ const UpdatePet = () => {
         timer: 1500,
       });
     } catch (error) {
-      console.error(error);
+      console.error('Image Upload Error:', error.message);
       Swal.fire('Error', 'Image upload failed. Try again.', 'error');
     } finally {
       setUploadingImage(false);
@@ -96,24 +116,35 @@ const UpdatePet = () => {
       age: form.age.value,
       location: form.location.value,
       status: form.status.value,
-      image_url: pet.image_url,
+      image_url: pet?.image_url,
       description: form.description.value,
     };
 
     try {
-      const res = await axiosSecure.put(`/pets/${id}`, updatedPet);
-      if (res.data.success) {
-        Swal.fire({
-          icon: 'success',
-          title: 'Successfully Updated!',
-          text: `${updatedPet.name}'s profile is now updated.`,
-          confirmButtonColor: '#37948b',
-        });
-        navigate('/dashboard/myPets');
-      }
+      // Supabase Update Query
+      const { error } = await supabase
+        .from('pets')
+        .update(updatedPet)
+        .eq('id', id);
+
+      if (error) throw error;
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Successfully Updated!',
+        text: `${updatedPet.name}'s profile is now updated.`,
+        confirmButtonColor: '#37948b',
+        background: '#FFFBF7',
+      });
+      navigate('/dashboard/myPets');
     } catch (err) {
-      console.error(err);
-      Swal.fire('Error', 'Failed to update pet profile.', 'error');
+      console.error('Update Error:', err.message);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: err.message || 'Failed to update pet profile.',
+        confirmButtonColor: '#37948b',
+      });
     } finally {
       setUpdateLoading(false);
     }
@@ -176,9 +207,9 @@ const UpdatePet = () => {
                 Profile Photo
               </label>
 
-              <div className="relative group w-full aspect-square rounded-[2rem] border-2 border-[#37948b] overflow-hidden shadow-2xl bg-gray-50">
+              <div className="relative group w-full aspect-square rounded-[2rem] border-2 border-[#37948b] overflow-hidden shadow-2xl bg-gray-50 dark:bg-gray-800">
                 <img
-                  src={previewUrl}
+                  src={previewUrl || 'https://via.placeholder.com/300'}
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                   alt="Pet Preview"
                 />
@@ -215,7 +246,8 @@ const UpdatePet = () => {
                 </h4>
               </div>
               <p className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest leading-relaxed">
-                Name: {user?.user_metadata?.full_name || user?.displayName}
+                Name:{' '}
+                {user?.user_metadata?.full_name || user?.displayName || 'Owner'}
                 <br />
                 Email: {user?.email}
               </p>
@@ -235,7 +267,7 @@ const UpdatePet = () => {
                     <FaPaw className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" />
                     <input
                       name="name"
-                      defaultValue={pet.name}
+                      defaultValue={pet?.name}
                       required
                       className="w-full pl-14 pr-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
                     />
@@ -251,7 +283,7 @@ const UpdatePet = () => {
                     <FaDog className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" />
                     <input
                       name="type"
-                      defaultValue={pet.type}
+                      defaultValue={pet?.type}
                       required
                       className="w-full pl-14 pr-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
                     />
@@ -265,7 +297,7 @@ const UpdatePet = () => {
                   </label>
                   <input
                     name="breed"
-                    defaultValue={pet.breed}
+                    defaultValue={pet?.breed}
                     className="w-full px-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
                   />
                 </div>
@@ -279,7 +311,7 @@ const UpdatePet = () => {
                     <FaCalendarAlt className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" />
                     <input
                       name="age"
-                      defaultValue={pet.age}
+                      defaultValue={pet?.age}
                       className="w-full pl-14 pr-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
                     />
                   </div>
@@ -294,7 +326,7 @@ const UpdatePet = () => {
                     <FaMapMarkerAlt className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" />
                     <input
                       name="location"
-                      defaultValue={pet.location}
+                      defaultValue={pet?.location}
                       required
                       className="w-full pl-14 pr-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
                     />
@@ -308,7 +340,7 @@ const UpdatePet = () => {
                   </label>
                   <select
                     name="status"
-                    defaultValue={pet.status}
+                    defaultValue={pet?.status}
                     className="w-full px-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all cursor-pointer"
                   >
                     <option value="Available">Available</option>
@@ -325,7 +357,7 @@ const UpdatePet = () => {
                   <textarea
                     name="description"
                     rows="5"
-                    defaultValue={pet.description}
+                    defaultValue={pet?.description}
                     className="w-full px-6 py-5 rounded-[2rem] border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all resize-none"
                   ></textarea>
                 </div>
@@ -336,7 +368,7 @@ const UpdatePet = () => {
                 whileTap={{ scale: 0.98 }}
                 type="submit"
                 disabled={updateLoading || uploadingImage}
-                className="w-full mt-10 py-5 bg-[#37948b] text-white font-black rounded-2xl shadow-xl shadow-[#37948b44] flex items-center justify-center gap-3 disabled:opacity-50 text-xs uppercase tracking-[0.2em] transition-all"
+                className="w-full mt-10 py-5 bg-[#37948b] text-white font-black rounded-2xl shadow-xl shadow-[#37948b44] flex items-center justify-center gap-3 disabled:opacity-50 text-xs uppercase tracking-[0.2em] transition-all cursor-pointer"
               >
                 {updateLoading ? (
                   <FaSpinner className="animate-spin text-xl" />

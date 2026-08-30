@@ -3,11 +3,10 @@ import Swal from 'sweetalert2';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import useAuth from '../../hooks/useAuth';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
+// import useAxiosSecure from '../../hooks/useAxiosSecure'; // এর আর প্রয়োজন নেই
 import { supabase } from '../../Supabase/supabase.config'; // সুপাবেস ক্লায়েন্ট ইম্পোর্ট
 import {
   FaPaw,
-  FaDog,
   FaMapMarkerAlt,
   FaCalendarAlt,
   FaCloudUploadAlt,
@@ -18,7 +17,6 @@ import {
 
 const AddPet = () => {
   const { user } = useAuth();
-  const axiosSecure = useAxiosSecure();
   const navigate = useNavigate();
   const [imageFile, setImageFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
@@ -44,7 +42,7 @@ const AddPet = () => {
       if (imageFile) {
         const fileName = `${Date.now()}_${imageFile.name.replace(/\s+/g, '_')}`;
         const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('pet-images') // আপনার বাল্কেট নাম
+          .from('pet-images') // আপনার বাকেটের নাম
           .upload(`pets/${fileName}`, imageFile);
 
         if (uploadError) throw uploadError;
@@ -64,7 +62,7 @@ const AddPet = () => {
         breed: form.breed.value || 'Mixed',
         age: form.age.value,
         location: form.location.value,
-        status: 'Available',
+        status: 'Pending',
         image_url: image_url,
         description: form.description.value,
         owner_email: user.email,
@@ -73,10 +71,16 @@ const AddPet = () => {
         created_at: new Date().toISOString(),
       };
 
-      // --- ৩. ব্যাকএন্ড এপিআই কল ---
-      const res = await axiosSecure.post('/pets', newPet);
+      // --- ৩. Supabase-এর 'pets' টেবিলে ডাটা ইনসার্ট করা ---
+      const { data: insertedData, error: insertError } = await supabase
+        .from('pets') // আপনার টেবিলের নাম
+        .insert([newPet])
+        .select(); // ইনসার্ট হওয়া ডাটা রিটার্ন করতে .select() ব্যবহার করা হয়
 
-      if (res.data.insertedId) {
+      if (insertError) throw insertError;
+
+      // ইনসার্ট সফল হলে
+      if (insertedData) {
         Swal.fire({
           icon: 'success',
           title: 'Successfully Added!',

@@ -13,17 +13,15 @@ import {
   FaCheckCircle,
   FaInfoCircle,
 } from 'react-icons/fa';
-import useAxios from '../../hooks/useAxios';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
 import useAuth from '../../hooks/useAuth';
 import Swal from 'sweetalert2';
 import Skeleton from 'react-loading-skeleton';
+import 'react-loading-skeleton/dist/skeleton.css';
+import { supabase } from '../../Supabase/supabase.config';
 
 const EventDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const axiosPublic = useAxios();
-  const axiosSecure = useAxiosSecure();
   const { user } = useAuth();
 
   const [event, setEvent] = useState(null);
@@ -31,69 +29,123 @@ const EventDetails = () => {
   const [isRegistered, setIsRegistered] = useState(false);
   const [regLoading, setRegLoading] = useState(false);
 
-  useEffect(() => {
-    fetchEventDetails();
-    if (user?.email) checkRegistration();
-  }, [id, user]);
-
-  // ডাটা ফেচ করার ফাংশন
+  // ১. সুপাবেস থেকে ইভেন্টের তথ্য ও বুকড সিট সংখ্যা আনা
   const fetchEventDetails = async (showLoading = true) => {
     try {
       if (showLoading) setLoading(true);
-      const res = await axiosPublic.get(`/events/${id}`);
-      console.log('Fresh Event Data:', res.data); // কনসোলে ডাটা চেক করুন
-      setEvent(res.data);
+
+      const { data: eventData, error: eventError } = await supabase
+        .from('events')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (eventError) throw eventError;
+
+      const { count: regCount, error: countError } = await supabase
+        .from('event_registrations')
+        .select('*', { count: 'exact', head: true })
+        .eq('event_id', id);
+
+      if (!countError) {
+        eventData.registeredCount = regCount || 0;
+      }
+
+      setEvent(eventData);
     } catch (err) {
-      console.error('Error loading details:', err);
+      console.error('Error loading details from Supabase:', err.message);
     } finally {
       setLoading(false);
     }
   };
 
+  // ২. ইউজার ইতিমধ্যে রেজিস্টার করেছেন কি না তা চেক করা
   const checkRegistration = async () => {
+    if (!user?.email || !id) return;
     try {
-      const res = await axiosSecure.get(
-        `/event-registrations/check?event_id=${id}&email=${user.email}`,
-      );
-      setIsRegistered(res.data.isRegistered);
+      const { data, error } = await supabase
+        .from('event_registrations')
+        .select('id')
+        .eq('event_id', id)
+        .eq('user_email', user.email)
+        .maybeSingle();
+
+      if (error) throw error;
+      setIsRegistered(!!data);
     } catch (err) {
-      console.error(err);
+      console.error('Check registration error:', err.message);
     }
   };
 
+  useEffect(() => {
+    fetchEventDetails();
+    if (user?.email) checkRegistration();
+  }, [id, user?.email]);
+
+  // ৩. ইভেন্টে রেজিস্ট্রেশন করা (ডুপ্লিকেট চেক ও ফিক্সড এরর হ্যান্ডলিং)
   const handleRegister = async () => {
-    if (!user) return Swal.fire('Login!', 'Please login first', 'warning');
+    if (!user) {
+      return Swal.fire({
+        icon: 'warning',
+        title: 'Login Required',
+        text: 'Please login first to join this event!',
+        confirmButtonColor: '#37948b',
+      });
+    }
 
     setRegLoading(true);
     try {
       const regData = {
         event_id: id,
         user_email: user.email,
-        user_name: user.displayName || 'User',
+        user_name:
+          user?.user_metadata?.full_name || user?.displayName || 'User',
       };
 
-      const res = await axiosSecure.post('/event-registrations', regData);
+      const { error } = await supabase
+        .from('event_registrations')
+        .insert([regData]);
 
-      if (res.data.success) {
-        Swal.fire({
-          title: 'Success!',
-          text: 'Registration confirmed!',
-          icon: 'success',
-          confirmButtonColor: '#37948b',
-        });
-
-        // বাটন আপডেট
-        setIsRegistered(true);
-
-        // ✅ এখানে লোডিং ছাড়াই বুকড সিটস আপডেট হবে
-        fetchEventDetails(false);
+      if (error) {
+        // ✅ যদি ইউজার ইতিমধ্যে রেজিস্টার করা থাকে (PostgreSQL Unique Constraint Violation)
+        if (
+          error.code === '23505' ||
+          error.message?.toLowerCase().includes('unique') ||
+          error.message?.toLowerCase().includes('duplicate')
+        ) {
+          setIsRegistered(true); // বাটন Registered করে দেওয়া
+          return Swal.fire({
+            icon: 'info',
+            title: 'Already Registered!',
+            text: 'You have already registered for this event.',
+            confirmButtonColor: '#37948b',
+            background: '#FFFBF7',
+          });
+        }
+        throw error;
       }
+
+      Swal.fire({
+        title: 'Success!',
+        text: 'Your registration is confirmed!',
+        icon: 'success',
+        confirmButtonColor: '#37948b',
+        background: '#FFFBF7',
+      });
+
+      // বাটন আপডেট
+      setIsRegistered(true);
+
+      // রিলোড ছাড়াই বুকড সিট সংখ্যা রিফ্রেশ
+      fetchEventDetails(false);
     } catch (err) {
-      Swal.fire(
-        'Error',
-        err.response?.data?.message || 'Action failed',
-        'error',
-      );
+      console.error('Registration Error:', err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Registration Failed',
+        text: err.message || 'Action failed. Please check permissions.',
+        confirmButtonColor: '#37948b',
+      });
     } finally {
       setRegLoading(false);
     }
@@ -101,7 +153,7 @@ const EventDetails = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen pt-32 px-6 max-w-7xl mx-auto">
+      <div className="min-h-screen pt-32 px-6   mx-auto">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
           <div className="lg:col-span-8">
             <Skeleton height={450} borderRadius={40} />
@@ -114,25 +166,35 @@ const EventDetails = () => {
     );
   }
 
-  if (!event)
+  if (!event) {
     return (
-      <div className="text-center py-40 font-black text-2xl">
-        Event not found!
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
+        <FaPaw className="text-6xl text-gray-300 mb-4 animate-bounce" />
+        <h2 className="text-3xl font-black text-gray-800 dark:text-white uppercase tracking-widest mb-4">
+          Event not found!
+        </h2>
+        <button
+          onClick={() => navigate('/events')}
+          className="px-8 py-3 bg-[#37948b] text-white rounded-2xl font-bold uppercase text-xs tracking-widest cursor-pointer"
+        >
+          Back to Events
+        </button>
       </div>
     );
+  }
 
-  // ক্যালকুলেশন ফিক্স (UI Safety)
+  // ক্যালকুলেশন
   const totalSeats = Number(event?.total_seats) || 50;
   const registeredCount = Number(event?.registeredCount) || 0;
-  const spotsLeft = totalSeats - registeredCount;
+  const spotsLeft = Math.max(totalSeats - registeredCount, 0);
   const progressWidth = Math.min((registeredCount / totalSeats) * 100, 100);
 
   return (
-    <div className="min-h-screen bg-[#FFFBF7] dark:bg-gray-950 pt-28 pb-20 px-6 md:px-12">
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen bg-[#FFFBF7] dark:bg-gray-950 pt-28 pb-20 px-6 md:px-12 font-sans">
+      <div className="  mx-auto">
         <button
           onClick={() => navigate(-1)}
-          className="flex items-center gap-2 text-gray-400 font-bold mb-8 hover:text-[#37948b] transition-all uppercase text-xs tracking-widest"
+          className="flex items-center gap-2 text-gray-400 font-bold mb-8 hover:text-[#37948b] transition-all uppercase text-xs tracking-widest cursor-pointer"
         >
           <FaArrowLeft /> Back to Events
         </button>
@@ -141,69 +203,72 @@ const EventDetails = () => {
           {/* Main Content */}
           <div className="lg:col-span-8">
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="relative rounded-[3rem] overflow-hidden shadow-2xl"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5 }}
+              className="relative rounded-[3rem] overflow-hidden shadow-2xl bg-gray-100 dark:bg-gray-800"
             >
               <img
-                src={event.image_url}
-                alt=""
-                className="w-full h-[500px] object-cover"
+                src={event.image_url || 'https://via.placeholder.com/800x500'}
+                alt={event.title}
+                className="w-full h-[480px] object-cover"
               />
-              <div className="absolute top-8 left-8 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md px-6 py-3 rounded-2xl flex items-center gap-3">
+              <div className="absolute top-8 left-8 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md px-6 py-3 rounded-2xl flex items-center gap-3 shadow-lg border border-white/20">
                 <FaTicketAlt className="text-[#37948b]" />
-                <span className="font-black text-[#37948b]">
+                <span className="font-black text-[#37948b] text-sm">
                   {event.ticket_price > 0
-                    ? `$${event.ticket_price}`
+                    ? `$${Number(event.ticket_price).toFixed(2)}`
                     : 'Free Entry'}
                 </span>
               </div>
             </motion.div>
 
             <div className="mt-12">
-              <h1 className="text-5xl font-black text-gray-900 dark:text-white mb-8 tracking-tighter">
+              <h1 className="text-4xl md:text-5xl font-black text-gray-900 dark:text-white mb-8 tracking-tighter">
                 {event.title}
               </h1>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-10 pb-10 border-b border-gray-100 dark:border-gray-800">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-teal-50 dark:bg-teal-900/20 rounded-xl flex items-center justify-center text-[#37948b]">
-                    <FaCalendarAlt />
+                  <div className="w-12 h-12 bg-teal-50 dark:bg-teal-900/20 rounded-2xl flex items-center justify-center text-[#37948b]">
+                    <FaCalendarAlt size={20} />
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
                       Date
                     </p>
-                    <p className="font-bold dark:text-white">{event.date}</p>
+                    <p className="font-bold dark:text-white text-sm">
+                      {event.date}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-teal-50 dark:bg-teal-900/20 rounded-xl flex items-center justify-center text-[#37948b]">
-                    <FaMapMarkerAlt />
+                  <div className="w-12 h-12 bg-teal-50 dark:bg-teal-900/20 rounded-2xl flex items-center justify-center text-[#37948b]">
+                    <FaMapMarkerAlt size={20} />
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
                       Location
                     </p>
-                    <p className="font-bold dark:text-white truncate">
+                    <p className="font-bold dark:text-white text-sm truncate max-w-[150px]">
                       {event.location}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-teal-50 dark:bg-teal-900/20 rounded-xl flex items-center justify-center text-[#37948b]">
-                    <FaUserTie />
+                  <div className="w-12 h-12 bg-teal-50 dark:bg-teal-900/20 rounded-2xl flex items-center justify-center text-[#37948b]">
+                    <FaUserTie size={20} />
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
                       Organizer
                     </p>
-                    <p className="font-bold dark:text-white">
+                    <p className="font-bold dark:text-white text-sm">
                       {event.organizer_name || 'Pet Care Team'}
                     </p>
                   </div>
                 </div>
               </div>
-              <p className="text-gray-600 dark:text-gray-400 text-lg whitespace-pre-line">
+              <p className="text-gray-600 dark:text-gray-400 text-lg whitespace-pre-line leading-relaxed font-medium">
                 {event.description}
               </p>
             </div>
@@ -211,29 +276,29 @@ const EventDetails = () => {
 
           {/* Sidebar */}
           <div className="lg:col-span-4">
-            <div className="bg-white dark:bg-gray-900 p-8 rounded-[2.5rem] shadow-2xl border border-gray-50 dark:border-gray-800 sticky top-32">
+            <div className="bg-white dark:bg-gray-900 p-8 rounded-[2.5rem] shadow-2xl border border-gray-100 dark:border-gray-800 sticky top-32">
               <h3 className="text-lg font-black dark:text-white mb-8 flex justify-between items-center">
                 Registration{' '}
-                <span className="text-[10px] bg-teal-50 text-[#37948b] px-3 py-1 rounded-full">
+                <span className="text-[10px] bg-teal-50 text-[#37948b] px-3 py-1 rounded-full font-black uppercase tracking-widest border border-teal-100">
                   LIVE
                 </span>
               </h3>
 
               <div className="mb-10">
-                <div className="flex justify-between text-xs font-bold mb-3 text-gray-400">
+                <div className="flex justify-between text-xs font-black mb-3 text-gray-400 tracking-widest">
                   <span>BOOKED SEATS</span>
                   <span className="text-[#37948b]">
                     {registeredCount} / {totalSeats}
                   </span>
                 </div>
-                <div className="w-full h-3 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                <div className="w-full h-3 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden p-0.5">
                   <motion.div
                     animate={{ width: `${progressWidth}%` }}
                     transition={{ duration: 1 }}
-                    className="h-full bg-[#37948b] rounded-full"
+                    className="h-full bg-gradient-to-r from-[#37948b] to-[#4DB6AC] rounded-full"
                   />
                 </div>
-                <p className="text-[10px] text-gray-400 mt-3 font-bold uppercase">
+                <p className="text-[10px] text-gray-400 mt-3 font-bold uppercase tracking-widest">
                   {spotsLeft > 0
                     ? `Only ${spotsLeft} spots remaining!`
                     : 'Event is Full'}
@@ -243,19 +308,19 @@ const EventDetails = () => {
               <button
                 onClick={handleRegister}
                 disabled={isRegistered || spotsLeft <= 0 || regLoading}
-                className={`w-full py-5 rounded-2xl font-black transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-xs shadow-xl ${
+                className={`w-full py-5 rounded-2xl font-black transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-xs shadow-xl cursor-pointer ${
                   isRegistered
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    ? 'bg-emerald-50 text-emerald-600 border border-emerald-100 cursor-not-allowed'
                     : spotsLeft <= 0
-                      ? 'bg-red-50 text-red-400'
-                      : 'bg-[#37948b] text-white hover:brightness-110 shadow-[#37948b44]'
+                      ? 'bg-red-50 text-red-400 cursor-not-allowed'
+                      : 'bg-[#37948b] text-white hover:bg-[#2d7a72] shadow-[#37948b44]'
                 }`}
               >
                 {regLoading ? (
                   'Processing...'
                 ) : isRegistered ? (
                   <>
-                    <FaCheckCircle /> Registered
+                    <FaCheckCircle /> You Are Registered
                   </>
                 ) : spotsLeft <= 0 ? (
                   'Sold Out'

@@ -14,27 +14,35 @@ import {
   FaChartLine,
   FaInfoCircle,
 } from 'react-icons/fa';
-import useAxios from '../../hooks/useAxios';
+// import useAxios from '../../hooks/useAxios'; // এর আর প্রয়োজন নেই
+import { supabase } from '../../Supabase/supabase.config'; // Supabase Client ইম্পোর্ট
 
 const DonationDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const axiosPublic = useAxios();
+  // const axiosPublic = useAxios(); // রিমুভ করা হয়েছে
   const [campaign, setCampaign] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ✅ ডাটা ফেচিং লজিক ফিক্স
+  // ✅ ডাটা ফেচিং লজিক ফিক্স (সুপাবেস ব্যবহার করে)
   useEffect(() => {
     if (!id) return;
 
     const fetchDetails = async () => {
       setLoading(true);
       try {
-        // নোট: সুপাবেসে আইডি সাধারণত UUID হয়
-        const res = await axiosPublic.get(`/campaigns/${id}`);
-        setCampaign(res.data);
+        // Supabase থেকে নির্দিষ্ট আইডি অনুযায়ী ডাটা ফেচ করা
+        const { data, error } = await supabase
+          .from('campaigns') // আপনার টেবিলের নাম
+          .select('*')
+          .eq('id', id)
+          .single(); // যেহেতু একটি মাত্র ক্যাম্পেইন আনবো
+
+        if (error) throw error;
+
+        setCampaign(data);
       } catch (err) {
-        console.error('❌ API Error:', err.response?.data || err.message);
+        console.error('❌ Supabase Error:', err.message);
         Swal.fire({
           icon: 'error',
           title: 'Oops...',
@@ -47,7 +55,7 @@ const DonationDetails = () => {
     };
 
     fetchDetails();
-  }, [id, axiosPublic]);
+  }, [id]);
 
   const handleDonateClick = () => {
     if (!campaign) return;
@@ -103,7 +111,7 @@ const DonationDetails = () => {
   if (loading) {
     return (
       <div className="w-full min-h-screen bg-[#FFFBF7] pt-28 px-6 md:px-12 lg:px-20">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12">
+        <div className="  mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12">
           <div className="lg:col-span-7">
             <Skeleton height={450} borderRadius={40} />
           </div>

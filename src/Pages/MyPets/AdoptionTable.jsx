@@ -9,49 +9,52 @@ import {
   FaCheckCircle,
 } from 'react-icons/fa';
 import useAuth from '../../hooks/useAuth';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
+// import useAxiosSecure from '../../hooks/useAxiosSecure'; // এর আর প্রয়োজন নেই
+import { supabase } from '../../Supabase/supabase.config'; // Supabase Client ইম্পোর্ট
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 const AdoptionTable = () => {
   const { user } = useAuth();
-  const axiosSecure = useAxiosSecure();
   const [adoptions, setAdoptions] = useState([]);
-  const [pets, setPets] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // ১. ইউজারের পাঠানো রিকোয়েস্টগুলো আনা
-  const fetchUserAdoptions = async () => {
-    if (!user?.email) return;
-    try {
-      const res = await axiosSecure.get(`/adoptions?email=${user.email}`);
-      setAdoptions(res.data || []);
-    } catch (err) {
-      console.error('Failed to load adoptions:', err);
-    }
-  };
-
-  // ২. পেটের তথ্য আনা (ম্যাপিং এর জন্য)
-  const fetchPets = async () => {
-    try {
-      const res = await axiosSecure.get('/pets');
-      setPets(res.data || []);
-    } catch (err) {
-      console.error('Failed to load pets:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Supabase থেকে ইউজারের এডপশন রিকোয়েস্ট এবং জোড় (Join) করে পেটের তথ্য আনা
   useEffect(() => {
-    fetchUserAdoptions();
-    fetchPets();
-  }, [user, axiosSecure]);
+    const fetchUserAdoptions = async () => {
+      if (!user?.email) return;
+      setLoading(true);
+      try {
+        // 'adoptions' টেবিল থেকে লগইন করা ইউজারের ডাটা এবং
+        // 'pets' টেবিল থেকে pet_id এর সাপেক্ষে পেটের তথ্য একসাথে ফেচ করা হচ্ছে
+        const { data, error } = await supabase
+          .from('adoptions')
+          .select(
+            `
+            *,
+            pets:pet_id (
+              id,
+              name,
+              type,
+              image_url
+            )
+          `
+          )
+          .eq('user_email', user.email)
+          .order('created_at', { ascending: false });
 
-  // হেল্পার: আইডি দিয়ে পেটের ডাটা বের করা
-  const getPetInfo = petId => {
-    return pets.find(p => (p.id || p._id) === petId) || {};
-  };
+        if (error) throw error;
+
+        setAdoptions(data || []);
+      } catch (err) {
+        console.error('Failed to load adoptions from Supabase:', err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserAdoptions();
+  }, [user]);
 
   if (loading) {
     return (
@@ -114,10 +117,12 @@ const AdoptionTable = () => {
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
                   <AnimatePresence>
                     {adoptions.map((ad, index) => {
-                      const pet = getPetInfo(ad.pet_id || ad.petId);
+                      // Supabase Join এর মাধ্যমে প্রাপ্ত পেটের অবজেক্ট
+                      const pet = ad.pets || {};
+
                       return (
                         <motion.tr
-                          key={ad.id || ad._id}
+                          key={ad.id}
                           initial={{ opacity: 0, x: -10 }}
                           animate={{ opacity: 1, x: 0 }}
                           transition={{ delay: index * 0.05 }}
@@ -166,7 +171,8 @@ const AdoptionTable = () => {
                               <span
                                 className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-sm ${
                                   ad.status?.toLowerCase() === 'active' ||
-                                  ad.status?.toLowerCase() === 'adopted'
+                                  ad.status?.toLowerCase() === 'adopted' ||
+                                  ad.status?.toLowerCase() === 'accepted'
                                     ? 'bg-green-50 text-green-600 border-green-100'
                                     : 'bg-amber-50 text-amber-600 border-amber-100'
                                 }`}
@@ -179,19 +185,18 @@ const AdoptionTable = () => {
                           {/* Date */}
                           <td className="p-8 text-right">
                             <p className="text-xs font-black text-gray-700 dark:text-gray-300">
-                              {new Date(
-                                ad.created_at || ad.createdAt,
-                              ).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                              })}
+                              {new Date(ad.created_at).toLocaleDateString(
+                                'en-US',
+                                {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                }
+                              )}
                             </p>
                             <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">
                               Submitted at{' '}
-                              {new Date(
-                                ad.created_at || ad.createdAt,
-                              ).toLocaleTimeString([], {
+                              {new Date(ad.created_at).toLocaleTimeString([], {
                                 hour: '2-digit',
                                 minute: '2-digit',
                               })}

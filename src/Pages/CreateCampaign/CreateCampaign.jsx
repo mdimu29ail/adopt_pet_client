@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { motion } from 'framer-motion';
 import useAuth from '../../hooks/useAuth';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
+// import useAxiosSecure from '../../hooks/useAxiosSecure'; // এর আর প্রয়োজন নেই
 import { supabase } from '../../Supabase/supabase.config';
 import {
   FaHandHoldingHeart,
@@ -21,7 +21,6 @@ import {
 const CreateCampaign = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const axiosSecure = useAxiosSecure();
   const [imageFile, setImageFile] = useState(null);
   const [preview, setPreview] = useState('');
   const [loading, setLoading] = useState(false);
@@ -46,7 +45,7 @@ const CreateCampaign = () => {
       return Swal.fire(
         'Warning',
         'Please upload a campaign banner!',
-        'warning',
+        'warning'
       );
     }
 
@@ -83,10 +82,16 @@ const CreateCampaign = () => {
         created_at: new Date().toISOString(),
       };
 
-      // ৩. ব্যাকএন্ডে রিকোয়েস্ট পাঠানো
-      const res = await axiosSecure.post('/campaigns', campaign);
+      // ৩. Supabase-এর 'campaigns' টেবিলে ডাটা ইনসার্ট করা
+      const { data: insertedData, error: insertError } = await supabase
+        .from('campaigns') // আপনার টেবিলের নাম
+        .insert([campaign])
+        .select();
 
-      if (res.data.insertedId) {
+      if (insertError) throw insertError;
+
+      // ইনসার্ট সফল হলে
+      if (insertedData) {
         Swal.fire({
           icon: 'success',
           title: 'Campaign Launched!',
@@ -105,10 +110,7 @@ const CreateCampaign = () => {
       Swal.fire({
         icon: 'error',
         title: 'Launch Failed',
-        text:
-          error.response?.data?.message ||
-          error.message ||
-          'Check your internet or database permissions.',
+        text: error.message || 'Check your internet or database permissions.',
         confirmButtonColor: '#37948b',
       });
     } finally {

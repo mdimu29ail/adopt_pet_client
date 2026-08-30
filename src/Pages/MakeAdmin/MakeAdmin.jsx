@@ -2,36 +2,29 @@ import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import Swal from 'sweetalert2';
-import {
-  FaUserShield,
-  FaSearch,
-  FaUserEdit,
-  FaTrashAlt,
-  FaUserCircle,
-  FaUserTag,
-  FaPaw,
-} from 'react-icons/fa';
+import { FaUserShield, FaSearch, FaUserCircle, FaPaw } from 'react-icons/fa';
 import moment from 'moment';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
-
-import useAxiosSecure from '../../hooks/useAxiosSecure';
+import { supabase } from '../../Supabase/supabase.config';
 
 const MakeAdmin = () => {
   const [search, setSearch] = useState('');
-  const axiosSecure = useAxiosSecure();
 
-  // ১. ইউজার ডাটা ফেচিং
+  // ১. ইউজার ডাটা ফেচিং (Supabase)
   const {
     data: users = [],
     isLoading,
-    isError,
     refetch,
   } = useQuery({
     queryKey: ['users'],
     queryFn: async () => {
-      const res = await axiosSecure.get('/users');
-      return res.data;
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
     },
     staleTime: 1000 * 60 * 5,
   });
@@ -46,7 +39,7 @@ const MakeAdmin = () => {
     });
   }, [search, users]);
 
-  // ৩. রোল পরিবর্তন লজিক
+  // ৩. রোল পরিবর্তন লজিক (Supabase)
   const toggleRole = async (email, currentRole) => {
     const isPromote = currentRole !== 'admin';
 
@@ -64,22 +57,23 @@ const MakeAdmin = () => {
     if (!result.isConfirmed) return;
 
     try {
-      const res = await axiosSecure.patch('/users/role', {
-        email,
-        role: isPromote ? 'admin' : 'user',
-      });
+      const { error } = await supabase
+        .from('users')
+        .update({ role: isPromote ? 'admin' : 'user' })
+        .eq('email', email);
 
-      if (res.data.success) {
-        Swal.fire({
-          icon: 'success',
-          title: 'Role Updated!',
-          text: `${email} is now ${isPromote ? 'an Admin' : 'a standard User'}.`,
-          confirmButtonColor: '#37948b',
-        });
-        refetch();
-      }
+      if (error) throw error;
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Role Updated!',
+        text: `${email} is now ${isPromote ? 'an Admin' : 'a standard User'}.`,
+        confirmButtonColor: '#37948b',
+      });
+      refetch();
     } catch (err) {
-      Swal.fire('Error', 'Failed to update role. Permission denied.', 'error');
+      console.error('Update Error:', err);
+      Swal.fire('Error', 'Failed to update role.', 'error');
     }
   };
 
@@ -129,7 +123,7 @@ const MakeAdmin = () => {
           </div>
         </div>
 
-        {/* --- Table Container --- */}
+        {/* --- Table    --- */}
         <div className="bg-white dark:bg-gray-900 rounded-[3rem] shadow-2xl shadow-teal-900/5 border border-gray-100 dark:border-gray-800 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left">
@@ -154,7 +148,7 @@ const MakeAdmin = () => {
                   {filteredUsers.length > 0 ? (
                     filteredUsers.map((user, index) => (
                       <motion.tr
-                        key={user.id || user._id || user.email}
+                        key={user.id || user.email}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
@@ -200,10 +194,8 @@ const MakeAdmin = () => {
 
                         {/* Updated At */}
                         <td className="p-8 text-sm font-bold text-gray-500 dark:text-gray-400">
-                          {user.updated_at || user.updatedAt
-                            ? moment(
-                                user.updated_at || user.updatedAt,
-                              ).fromNow()
+                          {user.updated_at
+                            ? moment(user.updated_at).fromNow()
                             : 'Never'}
                         </td>
 

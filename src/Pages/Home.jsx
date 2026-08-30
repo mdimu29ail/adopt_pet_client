@@ -1,5 +1,4 @@
 import React from 'react';
-import Container from '../Container/Container';
 
 import Banner from '../Components/Banner/Banner';
 
@@ -10,19 +9,20 @@ import AboutUs from '../Components/AboutUs/AboutUs';
 import PetSittingHero from '../Components/PetSittingHero/PetSittingHero';
 import Testimonials from '../Components/Testimonials/Testimonials';
 import ContactUs from '../Components/ContactUs/ContactUs';
+// import Container from '../Container/Container';
 
 const Home = () => {
   return (
     <div>
-      <Container>
-        <Banner></Banner>
-        <PetList></PetList>
-        <CallToAction></CallToAction>
-        <AboutUs></AboutUs>
-        <PetSittingHero></PetSittingHero>
-        <Testimonials></Testimonials>
-        <ContactUs></ContactUs>
-      </Container>
+      {/* <Container> */}
+      <Banner></Banner>
+      <PetList></PetList>
+      <CallToAction></CallToAction>
+      <AboutUs></AboutUs>
+      <PetSittingHero></PetSittingHero>
+      <Testimonials></Testimonials>
+      <ContactUs></ContactUs>
+      {/* </Container> */}
     </div>
   );
 };

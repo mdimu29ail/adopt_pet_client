@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import Swal from 'sweetalert2';
 import useAuth from '../../hooks/useAuth';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
+// import useAxiosSecure from '../../hooks/useAxiosSecure'; // এর আর প্রয়োজন নেই
+import { supabase } from '../../Supabase/supabase.config'; // Supabase Client ইম্পোর্ট
 import {
   FaPhoneAlt,
   FaMapMarkerAlt,
@@ -18,7 +19,7 @@ const AdoptForm = () => {
   const { id } = useParams(); // Pet ID
   const { user } = useAuth();
   const navigate = useNavigate();
-  const axiosSecure = useAxiosSecure();
+  // const axiosSecure = useAxiosSecure(); // রিমুভ করা হয়েছে
 
   const [formData, setFormData] = useState({
     phone: '',
@@ -61,10 +62,16 @@ const AdoptForm = () => {
 
     try {
       setLoading(true);
-      const res = await axiosSecure.post('/adoptions', adoptionData);
 
-      // ✅ মঙ্গোডিবি (insertedId) এবং সুপাবেস (success) দুটোর জন্যই ফিক্স
-      if (res.data?.insertedId || res.data?.success || res.status === 201) {
+      // Supabase-এর 'adoptions' টেবিলে ডাটা ইনসার্ট করা
+      const { data, error } = await supabase
+        .from('adoptions') // আপনার adoptions টেবিলের নাম
+        .insert([adoptionData])
+        .select();
+
+      if (error) throw error;
+
+      if (data) {
         Swal.fire({
           icon: 'success',
           title: 'Request Submitted!',
@@ -74,17 +81,14 @@ const AdoptForm = () => {
           background: '#FFFBF7',
         });
         navigate('/dashboard/adoptions');
-      } else {
-        throw new Error('Insertion failed on the server.');
       }
     } catch (error) {
-      console.error('❌ Submission error:', error.response?.data || error);
+      console.error('❌ Submission error:', error.message || error);
       Swal.fire({
         icon: 'error',
         title: 'Submission Failed',
         text:
-          error.response?.data?.message ||
-          'Check your database permissions or network.',
+          error.message || 'Check your database permissions (RLS) or network.',
         confirmButtonColor: '#37948b',
       });
     } finally {
@@ -118,7 +122,7 @@ const AdoptForm = () => {
           </p>
         </div>
 
-        {/* --- Form Container --- */}
+        {/* --- Form    --- */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}

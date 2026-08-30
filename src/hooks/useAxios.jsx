@@ -2,7 +2,9 @@ import axios from 'axios';
 
 const axiosPublic = axios.create({
   baseURL:
-    import.meta.env.VITE_API_URL || 'https://pet-adopton-sarver.vercel.app', // আপনার ব্যাকএন্ড ইউআরএল
+    import.meta.env.VITE_API_URL ||
+    // 'http://localhost:5000' ||
+    'http://localhost:5000',
 });
 
 const useAxios = () => {

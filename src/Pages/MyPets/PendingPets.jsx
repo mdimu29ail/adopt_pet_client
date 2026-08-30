@@ -4,7 +4,6 @@ import Swal from 'sweetalert2';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
-// ✅ এখানে FaCheckCircle আইকনটি মিসিং ছিল, এখন যোগ করা হয়েছে
 import {
   FaPaw,
   FaCheck,
@@ -16,26 +15,42 @@ import {
   FaShieldAlt,
   FaUserCircle,
 } from 'react-icons/fa';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
+// import useAxiosSecure from '../../hooks/useAxiosSecure'; // আর প্রয়োজন নেই
+import { supabase } from '../../Supabase/supabase.config'; // Supabase Client ইম্পোর্ট
 
 const PendingPets = () => {
-  const axiosSecure = useAxiosSecure();
   const [adoptions, setAdoptions] = useState([]);
-  const [pets, setPets] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Supabase থেকে সকল এডপশন রিকোয়েস্ট এবং সাথে পেটের তথ্য ফেচ করা
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [adoptionsRes, petsRes] = await Promise.all([
-        axiosSecure.get('/adoptions'),
-        axiosSecure.get('/pets'),
-      ]);
-      setAdoptions(adoptionsRes.data || []);
-      setPets(petsRes.data || []);
+      const { data, error } = await supabase
+        .from('adoptions')
+        .select(
+          `
+          *,
+          pets:pet_id (
+            id,
+            name,
+            type,
+            image_url
+          )
+        `
+        )
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setAdoptions(data || []);
     } catch (err) {
-      console.error('Failed to load data:', err);
-      Swal.fire('Error', 'Failed to load adoption requests.', 'error');
+      console.error('Failed to load data from Supabase:', err.message);
+      Swal.fire(
+        'Error',
+        'Failed to load adoption requests from Supabase.',
+        'error'
+      );
     } finally {
       setLoading(false);
     }
@@ -43,44 +58,41 @@ const PendingPets = () => {
 
   useEffect(() => {
     fetchData();
-  }, [axiosSecure]);
+  }, []);
 
-  const getPetInfo = petId => {
-    return pets.find(p => (p.id || p._id) === petId) || {};
-  };
-
-  // ✅ Approve Request
+  // ✅ Approve Request (Supabase Update)
   const handleActivate = async id => {
     try {
-      const res = await axiosSecure.patch(`/adoptions/${id}`, {
-        status: 'Accepted',
+      const { error } = await supabase
+        .from('adoptions')
+        .update({ status: 'Accepted' })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Approved!',
+        text: 'The adoption request has been accepted.',
+        confirmButtonColor: '#37948b',
+        background: '#FFFBF7',
       });
 
-      if (res.data.success || res.status === 200) {
-        Swal.fire({
-          icon: 'success',
-          title: 'Approved!',
-          text: 'The adoption request has been accepted.',
-          confirmButtonColor: '#37948b',
-          background: '#FFFBF7',
-        });
-
-        setAdoptions(prev =>
-          prev.map(ad =>
-            ad.id === id || ad._id === id ? { ...ad, status: 'Accepted' } : ad,
-          ),
-        );
-      }
+      // লোকাল স্টেট আপডেট
+      setAdoptions(prev =>
+        prev.map(ad => (ad.id === id ? { ...ad, status: 'Accepted' } : ad))
+      );
     } catch (err) {
+      console.error('Approval Error:', err);
       Swal.fire(
         'Error',
         'Could not approve adoption. Check permissions.',
-        'error',
+        'error'
       );
     }
   };
 
-  // ✅ Reject/Delete Request
+  // ✅ Reject/Delete Request (Supabase Delete)
   const handleDelete = async id => {
     const result = await Swal.fire({
       title: 'Reject Request?',
@@ -95,17 +107,24 @@ const PendingPets = () => {
 
     if (result.isConfirmed) {
       try {
-        const res = await axiosSecure.delete(`/adoptions/${id}`);
-        if (res.data.success || res.status === 200) {
-          Swal.fire({
-            icon: 'success',
-            title: 'Rejected!',
-            text: 'Adoption request has been removed.',
-            confirmButtonColor: '#37948b',
-          });
-          setAdoptions(prev => prev.filter(ad => (ad.id || ad._id) !== id));
-        }
+        const { error } = await supabase
+          .from('adoptions')
+          .delete()
+          .eq('id', id);
+
+        if (error) throw error;
+
+        Swal.fire({
+          icon: 'success',
+          title: 'Rejected!',
+          text: 'Adoption request has been removed.',
+          confirmButtonColor: '#37948b',
+        });
+
+        // লোকাল স্টেট থেকে বাদ দেওয়া
+        setAdoptions(prev => prev.filter(ad => ad.id !== id));
       } catch (err) {
+        console.error('Delete Error:', err);
         Swal.fire('Error', 'Failed to delete request.', 'error');
       }
     }
@@ -155,7 +174,7 @@ const PendingPets = () => {
               <p className="text-xl font-black text-gray-800 dark:text-white leading-none">
                 {
                   adoptions.filter(
-                    ad => ad.status?.toLowerCase() !== 'accepted',
+                    ad => ad.status?.toLowerCase() !== 'accepted'
                   ).length
                 }
               </p>
@@ -199,13 +218,13 @@ const PendingPets = () => {
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
                   <AnimatePresence>
                     {adoptions.map((ad, index) => {
-                      const pet = getPetInfo(ad.petId || ad.pet_id);
+                      const pet = ad.pets || {};
                       const isAccepted =
                         ad.status?.toLowerCase() === 'accepted';
 
                       return (
                         <motion.tr
-                          key={ad._id || ad.id}
+                          key={ad.id}
                           initial={{ opacity: 0, x: -10 }}
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: 10 }}
@@ -266,7 +285,6 @@ const PendingPets = () => {
                                   : 'bg-amber-50 text-amber-600 border-amber-100'
                               }`}
                             >
-                              {/* ✅ এখানেই সমস্যাটি ছিল, এখন FaCheckCircle কাজ করবে */}
                               {isAccepted ? <FaCheckCircle /> : <FaClock />}
                               {ad.status || 'Pending'}
                             </span>
@@ -277,7 +295,7 @@ const PendingPets = () => {
                               <motion.button
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
-                                onClick={() => handleActivate(ad._id || ad.id)}
+                                onClick={() => handleActivate(ad.id)}
                                 disabled={isAccepted}
                                 className={`px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-2 ${
                                   isAccepted
@@ -292,7 +310,7 @@ const PendingPets = () => {
                               <motion.button
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
-                                onClick={() => handleDelete(ad._id || ad.id)}
+                                onClick={() => handleDelete(ad.id)}
                                 className="px-4 py-2.5 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white border border-red-100 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all flex items-center gap-2"
                               >
                                 <FaTrashAlt /> Reject

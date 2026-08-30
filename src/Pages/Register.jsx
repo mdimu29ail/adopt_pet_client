@@ -1,3 +1,4 @@
+import React from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -12,13 +13,12 @@ import {
 import { motion } from 'framer-motion';
 import Swal from 'sweetalert2';
 import useAuth from '../hooks/useAuth';
-import useAxios from '../hooks/useAxios';
+// import useAxios from '../hooks/useAxios'; // এর আর প্রয়োজন নেই
 import Logo from '../Components/Logo/Logo';
 import { supabase } from '../Supabase/supabase.config'; // সুপাবেস ক্লায়েন্ট ইম্পোর্ট
 
 const Register = () => {
   const { createUser, googleLogin } = useAuth();
-  const axiosPublic = useAxios();
   const navigate = useNavigate();
 
   const {
@@ -28,13 +28,14 @@ const Register = () => {
     watch,
   } = useForm();
 
-  // ইমেজের প্রিভিউ দেখানোর জন্য
+  // ইমেজের প্রিভিউ ট্র্যাক করার জন্য
   const selectedImage = watch('image');
 
   const onSubmit = async data => {
     try {
       Swal.fire({
         title: 'Creating Account...',
+        text: 'Please wait while we register your profile.',
         allowOutsideClick: false,
         didOpen: () => Swal.showLoading(),
       });
@@ -42,58 +43,67 @@ const Register = () => {
       const imageFile = data.image[0];
       let imageUrl = '';
 
-      // --- ১. ইমেজ আপলোড লজিক (Supabase Storage) ---
+      // --- ১. ইমেজ আপলোড লজিক (নিরাপদ নাম সহ Supabase Storage) ---
       if (imageFile) {
-        const fileName = `${Date.now()}_${imageFile.name}`;
+        const fileExt = imageFile.name.split('.').pop();
+        const safeFileName = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}.${fileExt}`;
+
         const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('user-images') // আপনার বাল্কেট নাম
-          .upload(`profiles/${fileName}`, imageFile);
+          .from('user-images') // আপনার বাকেট নাম
+          .upload(`profiles/${safeFileName}`, imageFile);
 
-        if (uploadError) throw uploadError;
+        if (uploadError)
+          throw new Error(`Storage Error: ${uploadError.message}`);
 
-        // পাবলিক ইউআরএল গেট করা
+        // পাবলিক ইউআরএল পাওয়া
         const { data: urlData } = supabase.storage
           .from('user-images')
-          .getPublicUrl(`profiles/${fileName}`);
+          .getPublicUrl(`profiles/${safeFileName}`);
 
         imageUrl = urlData.publicUrl;
       }
 
-      // --- ২. সুপাবেস অথ দিয়ে ইউজার তৈরি ---
-      const { data: authData, error: authError } = await createUser(
+      // --- ২. অথেন্টিকেশন দিয়ে ইউজার তৈরি ---
+      const authRes = await createUser(
         data.email,
         data.password,
         data.name,
-        imageUrl,
+        imageUrl
       );
 
-      if (authError) throw authError;
+      if (authRes?.error) throw authRes.error;
 
-      // --- ৩. ডাটাবেজ (users table) এ তথ্য সেভ ---
+      // --- ৩. Supabase ডাটাবেজ ('users' টেবিলে) তথ্য সেভ করা ---
       const userInfo = {
         name: data.name,
         email: data.email,
         image: imageUrl,
         role: 'user',
-        created_at: new Date(),
+        created_at: new Date().toISOString(),
       };
 
-      const res = await axiosPublic.post('/users', userInfo);
+      const { error: dbError } = await supabase
+        .from('users') // আপনার users টেবিলের নাম
+        .insert([userInfo]);
 
-      if (res.data.inserted) {
-        Swal.fire({
-          icon: 'success',
-          title: 'Registration Successful!',
-          text: 'Welcome to the pack!',
-          confirmButtonColor: '#37948b',
-        });
-        navigate('/');
-      }
+      if (dbError) throw dbError;
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Registration Successful!',
+        text: 'Welcome to the pack!',
+        confirmButtonColor: '#37948b',
+        timer: 2000,
+        showConfirmButton: false,
+      });
+
+      navigate('/');
     } catch (error) {
+      console.error('Registration Error:', error);
       Swal.fire({
         icon: 'error',
-        title: 'Error',
-        text: error.message,
+        title: 'Registration Failed',
+        text: error.message || 'Something went wrong. Please try again.',
         confirmButtonColor: '#37948b',
       });
     }
@@ -135,9 +145,14 @@ const Register = () => {
                   type="text"
                   {...register('name', { required: 'Name is required' })}
                   placeholder="Your Name"
-                  className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-gray-100 bg-gray-50 outline-none focus:border-[#37948b] transition-all"
+                  className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-gray-100 bg-gray-50 outline-none focus:border-[#37948b] transition-all font-medium"
                 />
               </div>
+              {errors.name && (
+                <p className="text-xs text-red-500 font-bold ml-1">
+                  {errors.name.message}
+                </p>
+              )}
             </div>
 
             {/* Email */}
@@ -151,9 +166,14 @@ const Register = () => {
                   type="email"
                   {...register('email', { required: 'Email is required' })}
                   placeholder="email@example.com"
-                  className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-gray-100 bg-gray-50 outline-none focus:border-[#37948b] transition-all"
+                  className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-gray-100 bg-gray-50 outline-none focus:border-[#37948b] transition-all font-medium"
                 />
               </div>
+              {errors.email && (
+                <p className="text-xs text-red-500 font-bold ml-1">
+                  {errors.email.message}
+                </p>
+              )}
             </div>
 
             {/* Image Upload Field */}
@@ -186,7 +206,7 @@ const Register = () => {
                 </label>
               </div>
               {errors.image && (
-                <p className="text-xs text-red-500 font-bold">
+                <p className="text-xs text-red-500 font-bold ml-1">
                   {errors.image.message}
                 </p>
               )}
@@ -202,20 +222,28 @@ const Register = () => {
                 <input
                   type="password"
                   {...register('password', {
-                    required: 'Required',
-                    minLength: 6,
+                    required: 'Password is required',
+                    minLength: {
+                      value: 6,
+                      message: 'Password must be at least 6 characters',
+                    },
                   })}
                   placeholder="••••••••"
-                  className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-gray-100 bg-gray-50 outline-none focus:border-[#37948b] transition-all"
+                  className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-gray-100 bg-gray-50 outline-none focus:border-[#37948b] transition-all font-medium"
                 />
               </div>
+              {errors.password && (
+                <p className="text-xs text-red-500 font-bold ml-1">
+                  {errors.password.message}
+                </p>
+              )}
             </div>
 
             <motion.button
-              whileHover={{ scale: 1.02 }}
+              whileHover={{ scale: 1.02, backgroundColor: '#2d7a72' }}
               whileTap={{ scale: 0.98 }}
               type="submit"
-              className="w-full py-4 bg-[#37948b] text-white font-black rounded-xl shadow-lg hover:bg-[#2d7a72] transition-all flex items-center justify-center gap-2"
+              className="w-full py-4 bg-[#37948b] text-white font-black rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer uppercase text-xs tracking-widest mt-2"
             >
               Register Now <FaPaw />
             </motion.button>

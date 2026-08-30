@@ -1,212 +1,173 @@
-import { CardElement, useElements, useStripe } from '@stripe/react-stripe-js';
-import { useQuery } from '@tanstack/react-query';
 import React, { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { CardElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import Swal from 'sweetalert2';
-import Skeleton from 'react-loading-skeleton';
-import 'react-loading-skeleton/dist/skeleton.css';
-import {
-  FaCreditCard,
-  FaLock,
-  FaPaw,
-  FaSpinner,
-  FaExclamationTriangle,
-} from 'react-icons/fa';
-
+import { useNavigate, useParams } from 'react-router-dom';
+import { supabase } from '../../Supabase/supabase.config';
 import useAuth from '../../hooks/useAuth';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
+import { FaSpinner, FaLock } from 'react-icons/fa';
 
-const PaymentForm = () => {
+const PaymentForm = ({ campaign }) => {
   const stripe = useStripe();
   const elements = useElements();
-  const { id } = useParams();
   const { user } = useAuth();
-  const axiosSecure = useAxiosSecure();
   const navigate = useNavigate();
+  const { id } = useParams(); // Campaign ID
 
-  const [error, setError] = useState('');
-  const [processing, setProcessing] = useState(false);
-
-  // ক্যাম্পেইন তথ্য আনা
-  const { isLoading, data: donationInfo = {} } = useQuery({
-    queryKey: ['donations', id],
-    queryFn: async () => {
-      const res = await axiosSecure.get(`/campaigns/${id}`);
-      return res.data;
-    },
-    enabled: !!id,
-  });
-
-  if (isLoading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton height={50} borderRadius={15} />
-        <Skeleton height={60} borderRadius={15} />
-      </div>
-    );
-  }
-
-  // ✅ অ্যামাউন্ট নাম্বার হিসেবে নিশ্চিত করা
-  const amount = parseFloat(donationInfo.max_donation) || 0;
-  const amountInCents = Math.round(amount * 100);
+  const [amount, setAmount] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [cardError, setCardError] = useState('');
 
   const handleSubmit = async e => {
     e.preventDefault();
+
     if (!stripe || !elements) return;
+
+    const donationAmount = parseFloat(amount);
+    if (!donationAmount || donationAmount <= 0) {
+      return Swal.fire(
+        'Warning',
+        'Please enter a valid donation amount!',
+        'warning'
+      );
+    }
 
     const card = elements.getElement(CardElement);
     if (!card) return;
 
-    // ✅ পেমেন্ট ইনটেন্ট পাঠানোর আগে চেক (Stripe minimum is $0.50)
-    if (amountInCents < 50) {
-      setError('Minimum donation amount must be at least $0.50');
-      return;
-    }
-
-    setProcessing(true);
-    setError('');
+    setLoading(true);
+    setCardError('');
 
     try {
-      // ১. পেমেন্ট ইনটেন্ট তৈরি করা
-      // এখানে ডাটা পাঠানোর সময় কী (key) চেক করুন আপনার ব্যাকএন্ডের সাথে মিল আছে কি না
-      const res = await axiosSecure.post('/create-payment-intent', {
-        amountInCents: amountInCents,
-      });
-
-      const clientSecret = res.data.clientSecret;
-
-      // ২. কার্ড পেমেন্ট কনফার্ম করা
-      const result = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: {
+      // ১. Stripe Payment Method তৈরি
+      const { error: paymentMethodError, paymentMethod } =
+        await stripe.createPaymentMethod({
+          type: 'card',
           card,
           billing_details: {
             name:
-              user?.user_metadata?.full_name ||
               user?.displayName ||
-              'Anonymous',
-            email: user?.email || 'anonymous@example.com',
+              user?.user_metadata?.full_name ||
+              'Anonymous Donor',
+            email: user?.email || 'unknown@mail.com',
           },
-        },
+        });
+
+      if (paymentMethodError) {
+        throw new Error(paymentMethodError.message);
+      }
+
+      const transactionId = paymentMethod.id; // Stripe Transaction / PaymentMethod ID
+
+      // ২. Supabase-এর 'payments' টেবিলে ডাটা ইনসার্ট
+      const newPayment = {
+        donation_id: id,
+        email: user?.email,
+        amount: donationAmount,
+        transaction_id: transactionId,
+        paid_at: new Date().toISOString(),
+      };
+
+      const { error: paymentInsertError } = await supabase
+        .from('payments')
+        .insert([newPayment]);
+
+      if (paymentInsertError) throw paymentInsertError;
+
+      // ৩. Supabase-এর 'campaigns' টেবিলে donated_amount আপডেট করা
+      // প্রথমে বর্তমান ক্যাম্পেইনের তথ্য আনা
+      const { data: currentCampaign } = await supabase
+        .from('campaigns')
+        .select('donated_amount')
+        .eq('id', id)
+        .single();
+
+      const newTotal =
+        Number(currentCampaign?.donated_amount || 0) + donationAmount;
+
+      await supabase
+        .from('campaigns')
+        .update({ donated_amount: newTotal })
+        .eq('id', id);
+
+      // ৪. সফল হলে নোটিফিকেশন দেখানো
+      Swal.fire({
+        icon: 'success',
+        title: 'Thank You for Donating!',
+        text: `Transaction ID: ${transactionId}`,
+        confirmButtonColor: '#37948b',
+        background: '#FFFBF7',
       });
 
-      if (result.error) {
-        setError(result.error.message);
-        setProcessing(false);
-        return;
-      }
-
-      if (result.paymentIntent.status === 'succeeded') {
-        const transactionId = result.paymentIntent.id;
-
-        // ৩. সুপাবেসে পেমেন্ট রেকর্ড সেভ করা
-        const paymentData = {
-          donation_id: id,
-          email: user?.email,
-          amount: amount,
-          transaction_id: transactionId,
-          payment_method: 'card',
-          paid_at: new Date().toISOString(),
-        };
-
-        const paymentRes = await axiosSecure.post('/payments', paymentData);
-
-        if (paymentRes.data.insertedId) {
-          Swal.fire({
-            icon: 'success',
-            title: 'Donation Received!',
-            text: `Thank you for supporting ${donationInfo.title || 'the pet'}!`,
-            confirmButtonColor: '#37948b',
-            background: '#FFFBF7',
-          });
-          navigate('/dashboard/myDonations');
-        }
-      }
+      navigate('/dashboard/myDonations');
     } catch (err) {
-      // ✅ বিস্তারিত এরর মেসেজ দেখা
-      const serverError = err.response?.data?.message || err.message;
-      setError('Payment failed: ' + serverError);
-      console.error('Payment Error Log:', err.response?.data);
+      console.error('Payment Error:', err);
+      setCardError(err.message);
+      Swal.fire({
+        icon: 'error',
+        title: 'Payment Failed',
+        text: err.message || 'Something went wrong!',
+        confirmButtonColor: '#37948b',
+      });
     } finally {
-      setProcessing(false);
+      setLoading(false);
     }
   };
 
   return (
-    <div className="w-full">
-      <div className="bg-teal-50 dark:bg-teal-900/20 p-5 rounded-2xl mb-8 border border-teal-100 dark:border-teal-800/30 flex items-center justify-between">
-        <div>
-          <p className="text-[10px] font-black text-[#37948b] uppercase tracking-widest">
-            Contributing to
-          </p>
-          <h4 className="text-lg font-black text-gray-800 dark:text-white truncate max-w-[200px]">
-            {donationInfo.title || donationInfo.short_description}
-          </h4>
-        </div>
-        <div className="text-right">
-          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-            Amount
-          </p>
-          <h4 className="text-2xl font-black text-[#37948b]">
-            ${amount.toLocaleString()}
-          </h4>
+    <form onSubmit={handleSubmit} className="space-y-6 font-sans">
+      {/* Donation Amount Input */}
+      <div>
+        <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">
+          Donation Amount ($)
+        </label>
+        <input
+          type="number"
+          step="0.01"
+          placeholder="Enter amount (e.g. 25)"
+          value={amount}
+          onChange={e => setAmount(e.target.value)}
+          required
+          className="w-full px-6 py-4 rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold text-gray-800 dark:text-white transition-all text-lg"
+        />
+      </div>
+
+      {/* Stripe Card Element */}
+      <div>
+        <label className="block text-xs font-black text-gray-400 uppercase tracking-widest mb-2">
+          Card Information
+        </label>
+        <div className="p-4 rounded-2xl border-2 border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 focus-within:border-[#37948b] transition-all">
+          <CardElement
+            options={{
+              style: {
+                base: {
+                  fontSize: '16px',
+                  color: '#2D3436',
+                  '::placeholder': { color: '#aab7c4' },
+                },
+                invalid: { color: '#ef4444' },
+              },
+            }}
+          />
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-8">
-        <div className="space-y-2">
-          <label className="text-xs font-black text-gray-400 uppercase tracking-widest ml-1 flex items-center gap-2">
-            <FaCreditCard className="text-[#37948b]" /> Card Details
-          </label>
+      {cardError && (
+        <p className="text-red-500 text-xs font-bold text-center mt-2">
+          {cardError}
+        </p>
+      )}
 
-          <div className="p-5 bg-gray-50 dark:bg-gray-800/50 rounded-2xl border-2 border-transparent focus-within:border-[#37948b] transition-all">
-            <CardElement
-              options={{
-                style: {
-                  base: {
-                    fontSize: '16px',
-                    color: '#1a202c',
-                    fontFamily: 'Quicksand, sans-serif',
-                    fontWeight: '700',
-                    '::placeholder': { color: '#a0aec0' },
-                  },
-                  invalid: { color: '#ef4444' },
-                },
-              }}
-            />
-          </div>
-        </div>
-
-        <AnimatePresence>
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-3 p-4 bg-red-50 text-red-600 rounded-xl border border-red-100"
-            >
-              <FaExclamationTriangle className="flex-shrink-0" />
-              <p className="text-xs font-bold">{error}</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        <motion.button
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          type="submit"
-          disabled={!stripe || processing || amount <= 0}
-          className="w-full py-5 bg-[#37948b] text-white font-black rounded-2xl shadow-xl shadow-[#37948b44] flex items-center justify-center gap-3 disabled:opacity-50 text-lg uppercase tracking-widest transition-all"
-        >
-          {processing ? (
-            <FaSpinner className="animate-spin text-2xl" />
-          ) : (
-            <>
-              Confirm Donation <FaPaw />
-            </>
-          )}
-        </motion.button>
-      </form>
-    </div>
+      {/* Submit Button */}
+      <button
+        type="submit"
+        disabled={!stripe || loading}
+        className="w-full py-5 bg-[#37948b] text-white font-black rounded-2xl shadow-xl hover:bg-[#2d7a72] transition-all flex items-center justify-center gap-3 uppercase text-xs tracking-widest disabled:opacity-50 mt-8 cursor-pointer"
+      >
+        {loading ? <FaSpinner className="animate-spin text-lg" /> : <FaLock />}
+        {loading ? 'Processing...' : `Donate $${amount || '0'}`}
+      </button>
+    </form>
   );
 };
 

@@ -13,7 +13,8 @@ import {
 } from 'react-icons/fa';
 
 import useAuth from '../../hooks/useAuth';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
+// import useAxiosSecure from '../../hooks/useAxiosSecure'; // এর আর প্রয়োজন নেই
+import { supabase } from '../../Supabase/supabase.config'; // Supabase Client ইম্পোর্ট
 
 const formatDate = iso => {
   if (!iso) return 'N/A';
@@ -28,13 +29,25 @@ const formatDate = iso => {
 
 const PaymentHistory = () => {
   const { user } = useAuth();
-  const axiosSecure = useAxiosSecure();
+  // const axiosSecure = useAxiosSecure(); // রিমুভ করা হয়েছে
 
   const { isPending, data: payments = [] } = useQuery({
     queryKey: ['payments', user?.email],
     queryFn: async () => {
-      const res = await axiosSecure.get(`/payments?email=${user?.email}`);
-      return res.data;
+      if (!user?.email) return [];
+
+      // Supabase-এর 'payments' টেবিল থেকে বর্তমান ইউজারের পেমেন্ট হিস্ট্রি ফেচ করা
+      const { data, error } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('email', user.email)
+        .order('paid_at', { ascending: false }); // নতুন পেমেন্টগুলো সবার উপরে থাকবে
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return data || [];
     },
     enabled: !!user?.email,
   });
@@ -71,7 +84,7 @@ const PaymentHistory = () => {
           </p>
         </div>
 
-        {/* --- Table Container --- */}
+        {/* --- Table    --- */}
         <div className="bg-white dark:bg-gray-900 rounded-[2.5rem] shadow-2xl shadow-teal-900/5 border border-gray-100 dark:border-gray-800 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -98,7 +111,7 @@ const PaymentHistory = () => {
                 {payments.length > 0 ? (
                   payments.map((p, index) => (
                     <motion.tr
-                      key={p.transaction_id || p.transactionId}
+                      key={p.id || p.transaction_id || index}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: index * 0.05 }}
@@ -114,8 +127,8 @@ const PaymentHistory = () => {
                           </div>
                           <div>
                             <p className="text-sm font-black text-gray-800 dark:text-white truncate max-w-[150px]">
-                              {p.donationId ||
-                                p.donation_id ||
+                              {p.donation_id ||
+                                p.donationId ||
                                 'Global Support'}
                             </p>
                             <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">
@@ -127,7 +140,7 @@ const PaymentHistory = () => {
                       <td className="p-6">
                         <div className="flex items-center gap-1 text-[#37948b] font-black text-lg">
                           <FaDollarSign size={14} />
-                          <span>{p.amount}</span>
+                          <span>{Number(p.amount).toFixed(2)}</span>
                         </div>
                       </td>
                       <td className="p-6">
@@ -142,7 +155,7 @@ const PaymentHistory = () => {
                         <div className="flex flex-col items-end">
                           <div className="flex items-center gap-2 text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">
                             <FaClock className="text-[#37948b]" size={10} />
-                            {formatDate(p.paid_at || p.paid_at_string)}
+                            {formatDate(p.paid_at || p.created_at)}
                           </div>
                           <span className="text-[9px] font-black text-green-500 uppercase tracking-widest bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-md">
                             Verified
@@ -155,7 +168,7 @@ const PaymentHistory = () => {
                   <tr>
                     <td colSpan="5" className="p-20 text-center">
                       <div className="flex flex-col items-center">
-                        <div className="w-20 h-20 rounded-full bg-gray-50 flex items-center justify-center mb-4 text-gray-300">
+                        <div className="w-20 h-20 rounded-full bg-gray-50 dark:bg-gray-800 flex items-center justify-center mb-4 text-gray-300">
                           <FaHistory size={32} />
                         </div>
                         <h3 className="text-xl font-black text-gray-400 uppercase tracking-widest">

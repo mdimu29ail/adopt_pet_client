@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAuth from '../../hooks/useAuth';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 import {
@@ -15,12 +14,12 @@ import {
   FaInfoCircle,
   FaUserAlt,
 } from 'react-icons/fa';
+import { supabase } from '../../Supabase/supabase.config';
 
 const PetDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const axiosSecure = useAxiosSecure();
 
   const [pet, setPet] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -28,9 +27,16 @@ const PetDetails = () => {
 
   useEffect(() => {
     const fetchPet = async () => {
+      setLoading(true);
       try {
-        const res = await axiosSecure.get(`/pets/${id}`);
-        setPet(res.data);
+        const { data, error } = await supabase
+          .from('pets')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (error) throw error;
+        setPet(data);
       } catch (err) {
         setError('Could not load pet details. Please try again later.');
       } finally {
@@ -38,14 +44,14 @@ const PetDetails = () => {
       }
     };
     fetchPet();
-  }, [id, axiosSecure]);
+  }, [id]);
 
   const isOwner = user?.email === pet?.owner_email;
 
   if (loading) {
     return (
       <div className="w-full min-h-screen bg-[#FFFBF7] pt-28 px-6 md:px-12 lg:px-20">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12">
+        <div className="  mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12">
           <Skeleton height={500} borderRadius={40} />
           <div className="space-y-6">
             <Skeleton height={60} width="70%" borderRadius={20} />
@@ -83,7 +89,7 @@ const PetDetails = () => {
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-7xl mx-auto"
+        className="  mx-auto"
       >
         {/* --- Back Button --- */}
         <button

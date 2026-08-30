@@ -14,14 +14,11 @@ import {
   FaPlus,
 } from 'react-icons/fa';
 import useUserRole from '../../hooks/useUserRole';
-import useAxios from '../../hooks/useAxios'; // Using your existing hook
-import useAxiosSecure from '../../hooks/useAxiosSecure';
 import Swal from 'sweetalert2';
+import { supabase } from '../../Supabase/supabase.config';
 
 const PetListing = () => {
   const navigate = useNavigate();
-  const axiosPublic = useAxios(); // Initialize using your base hook
-  const axiosSecure = useAxiosSecure();
   const [role] = useUserRole();
 
   const [search, setSearch] = useState('');
@@ -30,20 +27,25 @@ const PetListing = () => {
   const [visibleCount, setVisibleCount] = useState(12);
   const [loading, setLoading] = useState(true);
 
-  // 1. Data Fetching
+  // 1. Data Fetching via Supabase
   useEffect(() => {
     const fetchPets = async () => {
       setLoading(true);
       try {
-        // Calling your public/base axios instance
-        const res = await axiosPublic.get('/pets');
+        let query = supabase
+          .from('pets')
+          .select('*')
+          .eq('status', 'Available')
+          .order('created_at', { ascending: false });
 
-        const filtered = res.data.filter(pet => {
+        const { data, error } = await query;
+        if (error) throw error;
+
+        const filtered = data.filter(pet => {
           const matchesSearch = pet.name
             .toLowerCase()
             .includes(search.toLowerCase());
           const matchesCategory = category === 'All' || pet.type === category;
-          // Filtering out adopted pets if the backend hasn't already done so
           return matchesSearch && matchesCategory && !pet.adopted;
         });
         setPets(filtered);
@@ -54,9 +56,9 @@ const PetListing = () => {
       }
     };
     fetchPets();
-  }, [search, category, axiosPublic]);
+  }, [search, category]);
 
-  // 2. Delete Logic
+  // 2. Delete Logic via Supabase
   const handleDelete = async id => {
     Swal.fire({
       title: 'Remove Pet?',
@@ -69,18 +71,13 @@ const PetListing = () => {
     }).then(async result => {
       if (result.isConfirmed) {
         try {
-          // Use Secure Axios for DELETE (requires admin/auth)
-          const res = await axiosSecure.delete(`/pets/${id}`);
-          if (res.data.success) {
-            setPets(prev => prev.filter(p => p.id !== id));
-            Swal.fire(
-              'Deleted!',
-              'The pet record has been removed.',
-              'success',
-            );
-          }
+          const { error } = await supabase.from('pets').delete().eq('id', id);
+          if (error) throw error;
+
+          setPets(prev => prev.filter(p => p.id !== id));
+          Swal.fire('Deleted!', 'The pet record has been removed.', 'success');
         } catch (error) {
-          Swal.fire('Error', 'Unauthorized or server error.', 'error');
+          Swal.fire('Error', 'Could not delete pet.', 'error');
         }
       }
     });

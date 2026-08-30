@@ -4,8 +4,9 @@ import { useNavigate, Link } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { motion, AnimatePresence } from 'framer-motion';
 import useAuth from '../../hooks/useAuth';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
+// import useAxiosSecure from '../../hooks/useAxiosSecure'; // আর প্রয়োজন নেই
 import useUserRole from '../../hooks/useUserRole';
+import { supabase } from '../../Supabase/supabase.config'; // Supabase Client
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 import {
@@ -21,7 +22,6 @@ import {
 
 const MyDonationCampaigns = () => {
   const { user } = useAuth();
-  const axiosSecure = useAxiosSecure();
   const [role] = useUserRole();
   const navigate = useNavigate();
 
@@ -32,13 +32,22 @@ const MyDonationCampaigns = () => {
   } = useQuery({
     queryKey: ['myCampaigns', user?.email],
     queryFn: async () => {
-      const res = await axiosSecure.get(`/campaigns?email=${user?.email}`);
-      return res.data;
+      // Supabase থেকে ইউজারের ইমেইল অনুযায়ী ডাটা ফেচ করা
+      const { data, error } = await supabase
+        .from('campaigns')
+        .select('*')
+        .eq('owner_email', user?.email)
+        .order('created_at', { ascending: false }); // নতুনগুলো আগে দেখাবে
+
+      if (error) {
+        throw new Error(error.message);
+      }
+      return data || [];
     },
     enabled: !!user?.email,
   });
 
-  // ✅ ফিক্সড ডিলিট লজিক
+  // ✅ Supabase ডিলিট লজিক
   const handleDelete = async id => {
     const result = await Swal.fire({
       title: 'Are you sure?',
@@ -53,38 +62,45 @@ const MyDonationCampaigns = () => {
 
     if (result.isConfirmed) {
       try {
-        // ব্যাকএন্ডে রিকোয়েস্ট পাঠানো হচ্ছে
-        const res = await axiosSecure.delete(`/campaigns/${id}`);
+        // Supabase Delete রিকোয়েস্ট
+        const { error } = await supabase
+          .from('campaigns')
+          .delete()
+          .eq('id', id);
 
-        // সুপাবেস বা কাস্টম ব্যাকএন্ডের সাকসেস চেক
-        if (res.data.success || res.status === 200) {
-          Swal.fire({
-            title: 'Deleted!',
-            text: 'Campaign removed successfully.',
-            icon: 'success',
-            confirmButtonColor: '#37948b',
-          });
-          refetch(); // লিস্ট রিফ্রেশ করা
-        }
+        if (error) throw error;
+
+        Swal.fire({
+          title: 'Deleted!',
+          text: 'Campaign removed successfully.',
+          icon: 'success',
+          confirmButtonColor: '#37948b',
+        });
+        refetch(); // লিস্ট রিফ্রেশ করা
       } catch (err) {
         console.error('Delete Error:', err);
         Swal.fire(
           'Error',
           'Could not delete. Check your permissions.',
-          'error',
+          'error'
         );
       }
     }
   };
 
-  // ✅ ক্যাম্পেইন পজ/রিজিউম লজিক (অতিরিক্ত সুবিধা)
+  // ✅ Supabase ক্যাম্পেইন পজ/রিজিউম লজিক
   const togglePause = async (id, currentStatus) => {
     try {
-      await axiosSecure.patch(`/campaigns/${id}`, {
-        is_paused: !currentStatus,
-      });
-      refetch();
+      const { error } = await supabase
+        .from('campaigns')
+        .update({ is_paused: !currentStatus })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      refetch(); // আপডেট হওয়ার পর ডাটা রিফ্রেশ করা
     } catch (err) {
+      console.error('Update Error:', err);
       Swal.fire('Error', 'Failed to update status', 'error');
     }
   };
@@ -156,9 +172,9 @@ const MyDonationCampaigns = () => {
               {campaigns.map(campaign => {
                 const progress = Math.min(
                   Math.round(
-                    (campaign.donated_amount / campaign.max_donation) * 100,
+                    (campaign.donated_amount / campaign.max_donation) * 100
                   ),
-                  100,
+                  100
                 );
                 const isPaused = campaign.is_paused;
 

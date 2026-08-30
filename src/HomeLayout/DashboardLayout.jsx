@@ -16,6 +16,7 @@ import {
   FaBars,
   FaHome,
   FaSignOutAlt,
+  FaClipboardCheck,
 } from 'react-icons/fa';
 import Logo from '../Components/Logo/Logo';
 import useUserRole from '../hooks/useUserRole';
@@ -85,6 +86,11 @@ const DashboardLayout = () => {
       path: '/dashboard/totalDonations',
       icon: <FaChartPie />,
       label: 'Analytics & Stats',
+    },
+    {
+      path: '/dashboard/manage-pets',
+      icon: <FaClipboardCheck />,
+      label: 'Manage Pets',
     },
   ];
 
@@ -191,9 +197,16 @@ const DashboardLayout = () => {
                     'User'}
                 </p>
                 <p className="text-[10px] font-bold text-[#37948b] uppercase tracking-widest">
-                  {role || 'Member'}
+                  {roleLoading
+                    ? 'Loading...'
+                    : role
+                      ? role.toUpperCase()
+                      : 'Member'}
                 </p>
+                {/* Debugging: Remove this log after verification */}
+                {console.log('Sidebar Role Rendering:', role)}
               </div>
+              // ...
             </div>
 
             <div className="grid grid-cols-2 gap-2">

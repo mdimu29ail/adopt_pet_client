@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import InfiniteScroll from 'react-infinite-scroll-component';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,7 +18,6 @@ import {
 import Swal from 'sweetalert2';
 import useUserRole from '../../hooks/useUserRole';
 import useAuth from '../../hooks/useAuth';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
 import Loading from '../../Loading/Loading';
 import { supabase } from '../../Supabase/supabase.config';
 
@@ -32,9 +31,14 @@ const DonationCampaigns = () => {
 
   const [role, roleLoading] = useUserRole();
   const { user } = useAuth();
-  const axiosSecure = useAxiosSecure();
+
+  // একই সাথে একাধিক ফেচ হওয়া রোধ করতে useRef
+  const isFetchingRef = useRef(false);
 
   const fetchCampaigns = async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+
     try {
       const from = page * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
@@ -48,7 +52,15 @@ const DonationCampaigns = () => {
       if (error) throw error;
 
       if (data) {
-        setCampaigns(prev => [...prev, ...data]);
+        // ✅ ডুপ্লিকেট ফিল্টার লজিক: যাতে একই আইডি দুইবার স্টেটে না ঢুকে
+        setCampaigns(prev => {
+          const existingIds = new Set(prev.map(c => String(c.id || c._id)));
+          const uniqueData = data.filter(
+            c => !existingIds.has(String(c.id || c._id))
+          );
+          return [...prev, ...uniqueData];
+        });
+
         setHasMore(data.length === PAGE_SIZE);
         setPage(prev => prev + 1);
       }
@@ -56,6 +68,7 @@ const DonationCampaigns = () => {
       console.error('Fetch failed:', err.message);
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
   };
 
@@ -63,7 +76,6 @@ const DonationCampaigns = () => {
     fetchCampaigns();
   }, []);
 
-  // বাকি দিন গণনা করার ফাংশন
   const getDaysLeft = date => {
     const today = new Date();
     const end = new Date(date);
@@ -73,7 +85,7 @@ const DonationCampaigns = () => {
   };
 
   const handleDelete = async id => {
-    Swal.fire({
+    const result = await Swal.fire({
       title: 'Are you sure?',
       text: 'This campaign will be permanently deleted!',
       icon: 'warning',
@@ -81,21 +93,36 @@ const DonationCampaigns = () => {
       confirmButtonColor: '#37948b',
       cancelButtonColor: '#d33',
       confirmButtonText: 'Yes, delete it!',
-    }).then(async result => {
-      if (result.isConfirmed) {
-        try {
-          const { error } = await supabase
-            .from('campaigns')
-            .delete()
-            .eq('id', id);
-          if (error) throw error;
-          setCampaigns(prev => prev.filter(c => c.id !== id));
-          Swal.fire('Deleted!', 'Campaign removed.', 'success');
-        } catch (err) {
-          Swal.fire('Error', 'Failed to delete campaign.', 'error');
-        }
-      }
+      background: '#FFFBF7',
     });
+
+    if (result.isConfirmed) {
+      try {
+        const { error } = await supabase
+          .from('campaigns')
+          .delete()
+          .eq('id', id);
+
+        if (error) throw error;
+
+        // ডিলিট করার সাথে সাথে স্টেট থেকে রিমুভ
+        setCampaigns(prev =>
+          prev.filter(c => String(c.id || c._id) !== String(id))
+        );
+
+        Swal.fire({
+          title: 'Deleted!',
+          text: 'Campaign removed successfully.',
+          icon: 'success',
+          confirmButtonColor: '#37948b',
+          timer: 1500,
+          showConfirmButton: false,
+        });
+      } catch (err) {
+        console.error('Delete Error:', err);
+        Swal.fire('Error', 'Failed to delete campaign.', 'error');
+      }
+    }
   };
 
   return (
@@ -120,7 +147,7 @@ const DonationCampaigns = () => {
 
           <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
             <Link to="/dashboard/createDonation">
-              <button className="bg-[#37948b] text-white px-10 py-5 rounded-2xl font-black shadow-2xl shadow-[#37948b33] hover:bg-[#2d7a72] transition-all flex items-center gap-3 text-lg">
+              <button className="bg-[#37948b] text-white px-10 py-5 rounded-2xl font-black shadow-2xl shadow-[#37948b33] hover:bg-[#2d7a72] transition-all flex items-center gap-3 text-lg cursor-pointer">
                 <FaPlus /> Start a Campaign
               </button>
             </Link>
@@ -159,122 +186,130 @@ const DonationCampaigns = () => {
             }
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-8">
-              {campaigns.map(c => {
-                const progress = Math.min(
-                  Math.round((c.donated_amount / c.max_donation) * 100),
-                  100,
-                );
-                const daysLeft = getDaysLeft(c.end_date);
+              <AnimatePresence mode="popLayout">
+                {campaigns.map(c => {
+                  const progress = Math.min(
+                    Math.round((c.donated_amount / c.max_donation) * 100),
+                    100
+                  );
+                  const daysLeft = getDaysLeft(c.end_date);
 
-                return (
-                  <motion.div
-                    key={c.id}
-                    layout
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    whileHover={{ y: -12 }}
-                    className="group bg-white dark:bg-gray-900 rounded-[2.5rem] overflow-hidden shadow-xl shadow-teal-900/5 hover:shadow-[#37948b1a] border border-transparent hover:border-[#37948b]/20 transition-all duration-500 flex flex-col h-full p-4"
-                  >
-                    {/* Image Area */}
-                    <div className="relative aspect-square w-full overflow-hidden rounded-[2rem]">
-                      <img
-                        src={
-                          c.pet_image || 'https://via.placeholder.com/600x400'
-                        }
-                        alt="pet"
-                        className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
-                      />
-                      <div className="absolute top-4 left-4 bg-white/90 dark:bg-gray-900/80 backdrop-blur-md px-4 py-1.5 rounded-full text-[9px] font-black text-[#37948b] shadow-lg border border-white/20 uppercase">
-                        {c.is_paused ? 'Paused' : 'Active'}
-                      </div>
-                    </div>
-
-                    <div className="p-4 flex flex-col flex-grow">
-                      <h3 className="text-xl font-black text-gray-800 dark:text-white mb-2 line-clamp-1 group-hover:text-[#37948b] transition-colors">
-                        {c.title || c.short_description}
-                      </h3>
-
-                      {/* Organizer & Deadline - New Info Added */}
-                      <div className="flex flex-col gap-2 mb-6">
-                        <div className="flex items-center gap-2 text-gray-400 font-bold text-[10px] uppercase tracking-widest">
-                          <FaUserCircle className="text-[#37948b]" />
-                          <span className="truncate">
-                            {c.owner_name || 'Anonymous'}
-                          </span>
+                  return (
+                    <motion.div
+                      key={c.id || c._id}
+                      layout
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.6 }}
+                      transition={{
+                        layout: { duration: 0.35, ease: 'easeInOut' },
+                        opacity: { duration: 0.2 },
+                      }}
+                      whileHover={{ y: -12 }}
+                      className="group bg-white dark:bg-gray-900 rounded-[2.5rem] overflow-hidden shadow-xl shadow-teal-900/5 hover:shadow-[#37948b1a] border border-transparent hover:border-[#37948b]/20 transition-colors duration-500 flex flex-col h-full p-4"
+                    >
+                      {/* Image Area */}
+                      <div className="relative aspect-square w-full overflow-hidden rounded-[2rem]">
+                        <img
+                          src={
+                            c.pet_image || 'https://via.placeholder.com/600x400'
+                          }
+                          alt="pet"
+                          className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
+                        />
+                        <div className="absolute top-4 left-4 bg-white/90 dark:bg-gray-900/80 backdrop-blur-md px-4 py-1.5 rounded-full text-[9px] font-black text-[#37948b] shadow-lg border border-white/20 uppercase">
+                          {c.is_paused ? 'Paused' : 'Active'}
                         </div>
-                        <div className="flex items-center gap-2 text-gray-400 font-bold text-[10px] uppercase tracking-widest">
-                          <FaClock
-                            className={
-                              daysLeft === 'Expired'
-                                ? 'text-red-500'
-                                : 'text-[#37948b]'
-                            }
-                          />
-                          <span
-                            className={
-                              daysLeft === 'Expired' ? 'text-red-500' : ''
-                            }
+                      </div>
+
+                      <div className="p-4 flex flex-col flex-grow">
+                        <h3 className="text-xl font-black text-gray-800 dark:text-white mb-2 line-clamp-1 group-hover:text-[#37948b] transition-colors">
+                          {c.title || c.short_description}
+                        </h3>
+
+                        {/* Organizer & Deadline */}
+                        <div className="flex flex-col gap-2 mb-6">
+                          <div className="flex items-center gap-2 text-gray-400 font-bold text-[10px] uppercase tracking-widest">
+                            <FaUserCircle className="text-[#37948b]" />
+                            <span className="truncate">
+                              {c.owner_name || 'Anonymous'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-gray-400 font-bold text-[10px] uppercase tracking-widest">
+                            <FaClock
+                              className={
+                                daysLeft === 'Expired'
+                                  ? 'text-red-500'
+                                  : 'text-[#37948b]'
+                              }
+                            />
+                            <span
+                              className={
+                                daysLeft === 'Expired' ? 'text-red-500' : ''
+                              }
+                            >
+                              {daysLeft}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Progress Section */}
+                        <div className="space-y-2 mb-8">
+                          <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-gray-400">
+                            <span>
+                              ${Number(c.donated_amount).toLocaleString()}{' '}
+                              Raised
+                            </span>
+                            <span>{progress}%</span>
+                          </div>
+                          <div className="w-full h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              whileInView={{ width: `${progress}%` }}
+                              transition={{ duration: 1, ease: 'easeOut' }}
+                              className="h-full bg-gradient-to-r from-[#37948b] to-[#4DB6AC]"
+                            ></motion.div>
+                          </div>
+                          <p className="text-[9px] font-bold text-gray-400 text-right uppercase tracking-tighter">
+                            Goal: ${Number(c.max_donation).toLocaleString()}
+                          </p>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="mt-auto flex items-center gap-2 pt-4 border-t border-gray-50 dark:border-gray-800">
+                          <Link
+                            to={`/donations/${c.id}`}
+                            className="flex-1 flex items-center justify-center gap-2 py-4 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-2xl font-black text-xs hover:bg-[#37948b] hover:text-white transition-all uppercase tracking-widest"
                           >
-                            {daysLeft}
-                          </span>
-                        </div>
-                      </div>
+                            <FaEye /> View
+                          </Link>
 
-                      {/* Progress Section */}
-                      <div className="space-y-2 mb-8">
-                        <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-gray-400">
-                          <span>
-                            ${Number(c.donated_amount).toLocaleString()} Raised
-                          </span>
-                          <span>{progress}%</span>
-                        </div>
-                        <div className="w-full h-2 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            whileInView={{ width: `${progress}%` }}
-                            transition={{ duration: 1, ease: 'easeOut' }}
-                            className="h-full bg-gradient-to-r from-[#37948b] to-[#4DB6AC]"
-                          ></motion.div>
-                        </div>
-                        <p className="text-[9px] font-bold text-gray-400 text-right uppercase tracking-tighter">
-                          Goal: ${Number(c.max_donation).toLocaleString()}
-                        </p>
-                      </div>
-
-                      {/* Action Buttons - Button style kept SAME as requested */}
-                      <div className="mt-auto flex items-center gap-2 pt-4 border-t border-gray-50 dark:border-gray-800">
-                        <Link
-                          to={`/donations/${c.id}`}
-                          className="flex-1 flex items-center justify-center gap-2 py-4 bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-2xl font-black text-xs hover:bg-[#37948b] hover:text-white transition-all uppercase tracking-widest"
-                        >
-                          <FaEye /> View
-                        </Link>
-
-                        {!roleLoading &&
-                          (role === 'admin' ||
-                            user?.email === c.owner_email) && (
-                            <div className="flex gap-2">
-                              <Link
-                                to={`/dashboard/edit-campaign/${c.id}`}
-                                className="p-4 bg-amber-50 dark:bg-amber-900/20 text-amber-600 rounded-2xl hover:bg-amber-500 hover:text-white transition-all shadow-sm"
-                              >
-                                <FaEdit />
-                              </Link>
-                              {role === 'admin' && (
-                                <button
-                                  onClick={() => handleDelete(c.id)}
-                                  className="p-4 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-2xl hover:bg-red-500 hover:text-white transition-all shadow-sm"
+                          {!roleLoading &&
+                            (role === 'admin' ||
+                              user?.email === c.owner_email) && (
+                              <div className="flex gap-2">
+                                <Link
+                                  to={`/dashboard/edit-campaign/${c.id}`}
+                                  className="p-4 bg-amber-50 dark:bg-amber-900/20 text-amber-600 rounded-2xl hover:bg-amber-500 hover:text-white transition-all shadow-sm"
                                 >
-                                  <FaTrash />
-                                </button>
-                              )}
-                            </div>
-                          )}
+                                  <FaEdit />
+                                </Link>
+                                {role === 'admin' && (
+                                  <button
+                                    onClick={() => handleDelete(c.id)}
+                                    className="p-4 bg-red-50 dark:bg-red-900/20 text-red-600 rounded-2xl hover:bg-red-500 hover:text-white transition-all shadow-sm cursor-pointer"
+                                  >
+                                    <FaTrash />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                        </div>
                       </div>
-                    </div>
-                  </motion.div>
-                );
-              })}
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
             </div>
           </InfiniteScroll>
         )}

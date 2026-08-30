@@ -16,12 +16,13 @@ import {
   FaInfoCircle,
 } from 'react-icons/fa';
 import { supabase } from '../../Supabase/supabase.config';
-import useAxiosSecure from '../../hooks/useAxiosSecure';
+// import useAxiosSecure from '../../hooks/useAxiosSecure'; // এর আর প্রয়োজন নেই
 
 const EditPetForm = () => {
-  const { id } = useParams();
+  const { id, petId } = useParams();
+  const targetId = id || petId; // রাউটে id বা petId যাই থাকুক কাজ করবে
+
   const navigate = useNavigate();
-  const axiosSecure = useAxiosSecure();
 
   const [pet, setPet] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -29,42 +30,66 @@ const EditPetForm = () => {
   const [imageUrl, setImageUrl] = useState('');
   const [updateLoading, setUpdateLoading] = useState(false);
 
-  // ১. পেটের বর্তমান তথ্য লোড করা
+  // ১. সুপাবেস থেকে পেটের বর্তমান তথ্য লোড করা
   useEffect(() => {
+    if (!targetId) {
+      setLoading(false);
+      return;
+    }
+
     const fetchPet = async () => {
+      setLoading(true);
       try {
-        const res = await axiosSecure.get(`/pets/${id}`);
-        setPet(res.data);
-        setImageUrl(res.data.image_url || '');
-        setLoading(false);
+        const { data, error } = await supabase
+          .from('pets')
+          .select('*')
+          .eq('id', targetId)
+          .single();
+
+        if (error) throw error;
+
+        setPet(data);
+        setImageUrl(data?.image_url || '');
       } catch (err) {
-        console.error('Failed to fetch pet:', err);
-        Swal.fire('Error', 'Failed to load pet data', 'error');
+        console.error('Failed to fetch pet from Supabase:', err.message);
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'Failed to load pet details from Supabase.',
+          confirmButtonColor: '#37948b',
+        });
+      } finally {
         setLoading(false);
       }
     };
-    fetchPet();
-  }, [id, axiosSecure]);
 
-  // ২. সরাসরি সুপাবেস স্টোরেজে ইমেজ আপলোড
+    fetchPet();
+  }, [targetId]);
+
+  // ২. সরাসরি সুপাবেস স্টোরেজে ইমেজ আপলোড (নিরাপদ নাম সহ)
   const handleImageUpload = async e => {
     const file = e.target.files[0];
     if (!file) return;
 
     setImageUploading(true);
     try {
-      const fileName = `${Date.now()}_${file.name.replace(/\s+/g, '_')}`;
+      // স্পেশাল ক্যারেক্টার ও বাংলা নাম এড়াতে রেন্ডম ফাইলনেম তৈরি
+      const fileExt = file.name.split('.').pop();
+      const safeFileName = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}.${fileExt}`;
+
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('pet-images') // আপনার বাল্কেট নাম
-        .upload(`pets/${fileName}`, file);
+        .from('pet-images') // আপনার বাকেট নাম
+        .upload(`pets/${safeFileName}`, file);
 
       if (uploadError) throw uploadError;
 
       const { data: urlData } = supabase.storage
         .from('pet-images')
-        .getPublicUrl(`pets/${fileName}`);
+        .getPublicUrl(`pets/${safeFileName}`);
 
       setImageUrl(urlData.publicUrl);
+      setPet(prev => ({ ...prev, image_url: urlData.publicUrl }));
+
       Swal.fire({
         icon: 'success',
         title: 'Image Uploaded!',
@@ -74,14 +99,18 @@ const EditPetForm = () => {
         timer: 1500,
       });
     } catch (err) {
-      console.error('Upload error:', err);
-      Swal.fire('Error', 'Image upload failed', 'error');
+      console.error('Upload error:', err.message);
+      Swal.fire(
+        'Error',
+        'Image upload failed. Check storage permissions.',
+        'error'
+      );
     } finally {
       setImageUploading(false);
     }
   };
 
-  // ৩. তথ্য আপডেট করা
+  // ৩. তথ্য সুপাবেস ডাটাবেসে আপডেট করা
   const handleSubmit = async e => {
     e.preventDefault();
     setUpdateLoading(true);
@@ -95,42 +124,74 @@ const EditPetForm = () => {
       location: form.location.value,
       status: form.status.value,
       description: form.description.value,
-      image_url: imageUrl,
+      image_url: imageUrl || pet?.image_url,
     };
 
     try {
-      const res = await axiosSecure.put(`/pets/${id}`, updatedPet);
-      if (res.data.success) {
-        Swal.fire({
-          icon: 'success',
-          title: 'Updates Saved!',
-          text: 'Pet information has been updated.',
-          confirmButtonColor: '#37948b',
-        });
-        navigate('/petListing');
-      } else {
-        Swal.fire('Info', 'No changes were detected', 'info');
-      }
+      const { error } = await supabase
+        .from('pets')
+        .update(updatedPet)
+        .eq('id', targetId);
+
+      if (error) throw error;
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Updates Saved!',
+        text: 'Pet information has been successfully updated.',
+        confirmButtonColor: '#37948b',
+        background: '#FFFBF7',
+      });
+      navigate('/petListing');
     } catch (err) {
-      Swal.fire('Error', 'Failed to update pet data', 'error');
+      console.error('Update Error:', err.message);
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: err.message || 'Failed to update pet data.',
+        confirmButtonColor: '#37948b',
+      });
     } finally {
       setUpdateLoading(false);
     }
   };
 
+  // 🔄 লোডিং স্টেট
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto py-20 px-6">
+      <div className="max-w-4xl mx-auto py-28 px-6">
         <Skeleton height={50} width="40%" className="mb-10" borderRadius={20} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <Skeleton height={400} borderRadius={30} />
+          <Skeleton height={350} borderRadius={30} />
           <div className="space-y-4">
             <Skeleton height={50} borderRadius={15} />
             <Skeleton height={50} borderRadius={15} />
             <Skeleton height={50} borderRadius={15} />
-            <Skeleton height={150} borderRadius={15} />
+            <Skeleton height={120} borderRadius={15} />
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // ⚠️ ডাটা না পাওয়া গেলে
+  if (!pet) {
+    return (
+      <div className="flex flex-col justify-center items-center min-h-screen bg-[#FFFBF7] dark:bg-gray-950 p-6 text-center">
+        <FaPaw className="text-6xl text-gray-300 dark:text-gray-700 mb-4 animate-pulse" />
+        <h2 className="text-2xl font-black text-gray-800 dark:text-white uppercase tracking-widest mb-2">
+          Pet Not Found
+        </h2>
+        <p className="text-gray-400 font-bold mb-6">
+          Could not find pet with ID:{' '}
+          <span className="text-[#37948b] font-mono">{targetId}</span>
+        </p>
+        <Link
+          to="/petListing"
+          className="px-8 py-3.5 bg-[#37948b] text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-[#2d7a72] transition-all"
+        >
+          Back to Pet List
+        </Link>
       </div>
     );
   }
@@ -152,7 +213,7 @@ const EditPetForm = () => {
               <FaArrowLeft /> Back to List
             </Link>
             <h2 className="text-4xl md:text-6xl font-black text-gray-900 dark:text-white tracking-tighter">
-              Edit <span className="text-[#37948b]">{pet.name}</span>
+              Edit <span className="text-[#37948b]">{pet?.name || 'Pet'}</span>
             </h2>
           </div>
           <div className="bg-white dark:bg-gray-900 px-6 py-3 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-800 flex items-center gap-3">
@@ -174,10 +235,14 @@ const EditPetForm = () => {
                 Profile Media
               </label>
 
-              <div className="relative group aspect-square rounded-[2rem] border-2 border-[#37948b] overflow-hidden shadow-2xl">
+              <div className="relative group aspect-square rounded-[2rem] border-2 border-[#37948b] overflow-hidden shadow-2xl bg-gray-50 dark:bg-gray-800">
                 <img
-                  src={imageUrl || 'https://via.placeholder.com/400'}
-                  className="w-full h-full object-cover"
+                  src={
+                    imageUrl ||
+                    pet?.image_url ||
+                    'https://via.placeholder.com/400'
+                  }
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   alt="pet"
                 />
                 <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-sm cursor-pointer">
@@ -189,11 +254,11 @@ const EditPetForm = () => {
                     type="file"
                     accept="image/*"
                     onChange={handleImageUpload}
-                    className="absolute inset-0 opacity-0 cursor-pointer"
+                    className="absolute inset-0 opacity-0 cursor-pointer z-10"
                   />
                 </div>
                 {imageUploading && (
-                  <div className="absolute inset-0 bg-white/80 dark:bg-black/80 flex items-center justify-center">
+                  <div className="absolute inset-0 bg-white/80 dark:bg-black/80 flex items-center justify-center z-20">
                     <FaSpinner className="animate-spin text-[#37948b] text-3xl" />
                   </div>
                 )}
@@ -217,7 +282,7 @@ const EditPetForm = () => {
                     <FaPaw className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" />
                     <input
                       name="name"
-                      defaultValue={pet.name}
+                      defaultValue={pet?.name || ''}
                       required
                       className="w-full pl-14 pr-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
                     />
@@ -233,7 +298,7 @@ const EditPetForm = () => {
                     <FaDog className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" />
                     <input
                       name="type"
-                      defaultValue={pet.type}
+                      defaultValue={pet?.type || ''}
                       required
                       className="w-full pl-14 pr-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
                     />
@@ -246,7 +311,7 @@ const EditPetForm = () => {
                   </label>
                   <input
                     name="breed"
-                    defaultValue={pet.breed}
+                    defaultValue={pet?.breed || ''}
                     required
                     className="w-full px-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
                   />
@@ -260,7 +325,7 @@ const EditPetForm = () => {
                     <FaCalendarAlt className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" />
                     <input
                       name="age"
-                      defaultValue={pet.age}
+                      defaultValue={pet?.age || ''}
                       required
                       className="w-full pl-14 pr-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
                     />
@@ -275,7 +340,7 @@ const EditPetForm = () => {
                     <FaMapMarkerAlt className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-300" />
                     <input
                       name="location"
-                      defaultValue={pet.location}
+                      defaultValue={pet?.location || ''}
                       required
                       className="w-full pl-14 pr-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all"
                     />
@@ -289,7 +354,7 @@ const EditPetForm = () => {
                   <div className="relative">
                     <select
                       name="status"
-                      defaultValue={pet.status}
+                      defaultValue={pet?.status || 'Available'}
                       className="w-full px-6 py-4 rounded-2xl border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white appearance-none cursor-pointer"
                     >
                       <option value="Available">Available</option>
@@ -307,7 +372,7 @@ const EditPetForm = () => {
                   </label>
                   <textarea
                     name="description"
-                    defaultValue={pet.description}
+                    defaultValue={pet?.description || ''}
                     rows="5"
                     required
                     className="w-full px-6 py-5 rounded-[2rem] border-2 border-gray-50 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 outline-none focus:border-[#37948b] font-bold dark:text-white transition-all resize-none"
@@ -320,7 +385,7 @@ const EditPetForm = () => {
                 whileTap={{ scale: 0.98 }}
                 type="submit"
                 disabled={imageUploading || updateLoading}
-                className="w-full mt-10 py-5 bg-[#37948b] text-white font-black rounded-2xl shadow-xl hover:bg-[#2d7a72] transition-all flex items-center justify-center gap-3 disabled:opacity-50 text-xs uppercase tracking-[0.2em]"
+                className="w-full mt-10 py-5 bg-[#37948b] text-white font-black rounded-2xl shadow-xl hover:bg-[#2d7a72] transition-all flex items-center justify-center gap-3 disabled:opacity-50 text-xs uppercase tracking-[0.2em] cursor-pointer"
               >
                 {updateLoading ? (
                   <FaSpinner className="animate-spin text-xl" />

@@ -32,6 +32,7 @@ import Blogs from '../Components/Blog/Blogs';
 import BlogDetails from '../Components/Blog/BlogDetails';
 import Events from '../Components/Events/Events';
 import EventDetails from '../Components/Events/EventDetails';
+import AdminPetManagement from '../Pages/Dashboard/AdminPetManagement';
 
 // রুটগুলোকে ক্যাটাগরি অনুযায়ী সাজানো হয়েছে যাতে বুঝতে সুবিধা হয়
 const router = createBrowserRouter([
@@ -156,6 +157,14 @@ const router = createBrowserRouter([
         element: (
           <AdminRoute>
             <TotalDonationsAdmin />
+          </AdminRoute>
+        ),
+      },
+      {
+        path: 'manage-pets',
+        element: (
+          <AdminRoute>
+            <AdminPetManagement />
           </AdminRoute>
         ),
       },
